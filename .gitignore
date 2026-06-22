@@ -1,0 +1,23 @@
+node_modules/
+package-lock.json
+
+# OS files
+Thumbs.db
+.DS_Store
+*.swp
+*.swo
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Chrome Extension / Build files
+*.pem
+*.crx
+*.zip
+
+# Environment
+.env
+.env.local

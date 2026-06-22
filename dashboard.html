@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JEE Study Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="libs/katex/katex.min.css">
+</head>
+<body class="dark-theme">
+  <header class="top-bar">
+    <h1 class="logo">JEE Study Dashboard</h1>
+    <div class="top-bar-right">
+      <span id="global-streak" class="streak-badge">0</span>
+      <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme"></button>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="countdown">Countdown</button>
+    <button class="tab-btn" data-tab="questions">Questions</button>
+    <button class="tab-btn" data-tab="mistakes">Mistakes</button>
+    <button class="tab-btn" data-tab="backlog">Backlog</button>
+    <button class="tab-btn" data-tab="todo">Todo</button>
+    <button class="tab-btn" data-tab="timer">Timer</button>
+    <button class="tab-btn" data-tab="notes">Notes</button>
+    <button class="tab-btn" data-tab="tests">Tests</button>
+    <button class="tab-btn" data-tab="analytics">Analytics</button>
+    <button class="tab-btn" data-tab="chat">Chat</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+  </nav>
+
+  <main class="tab-content">
+    <section id="tab-countdown" class="tab-panel active"></section>
+    <section id="tab-questions" class="tab-panel"></section>
+    <section id="tab-mistakes" class="tab-panel"></section>
+    <section id="tab-backlog" class="tab-panel"></section>
+    <section id="tab-todo" class="tab-panel"></section>
+    <section id="tab-timer" class="tab-panel"></section>
+    <section id="tab-notes" class="tab-panel"></section>
+    <section id="tab-tests" class="tab-panel"></section>
+    <section id="tab-analytics" class="tab-panel"></section>
+    <section id="tab-chat" class="tab-panel"></section>
+    <section id="tab-settings" class="tab-panel"></section>
+  </main>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="libs/marked/marked.min.js"></script>
+  <script src="libs/katex/katex.min.js"></script>
+  <script src="libs/puter.js"></script>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
