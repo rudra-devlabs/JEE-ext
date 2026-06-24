@@ -1,4 +1,4 @@
-import { getIconSvg } from "./modules/ui.js";
+import { getIconSvg, createQuantityPillUI } from "./modules/ui.js";
 import { testSchedule as defaultSchedule } from "./modules/testData.js";
 import { initChat } from "./modules/chat.js";
 
@@ -180,24 +180,22 @@ async function updatePopupUpcomingTest() {
     const timeDiff = testDay.getTime() - today.getTime();
     const daysLeft = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
     
-    if (daysLeft <= 7 && daysLeft >= 0) {
-      const dateStr = nextTest.dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-      let daysText;
-      if (daysLeft === 0) daysText = "Today!";
-      else if (daysLeft === 1) daysText = "Tomorrow";
-      else daysText = `In ${daysLeft} Days`;
+    const dateStr = nextTest.dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    let daysText;
+    if (daysLeft <= 0) daysText = "Today!";
+    else if (daysLeft === 1) daysText = "Tomorrow";
+    else daysText = `In ${daysLeft} Days`;
 
-      const alertSvg = await getIconSvg('questions');
-      alertEl.innerHTML = `
-        <div class="popup-alert-icon">${alertSvg}</div>
-        <div class="popup-alert-content">
-          <div class="popup-alert-title">${nextTest.name}</div>
-          <div class="popup-alert-date">${dateStr} · <span class="popup-accent-text">${daysText}</span></div>
-        </div>
-      `;
-      alertEl.style.display = "flex";
-      return;
-    }
+    const alertSvg = await getIconSvg('questions');
+    alertEl.innerHTML = `
+      <div class="popup-alert-icon">${alertSvg}</div>
+      <div class="popup-alert-content">
+        <div class="popup-alert-title">${nextTest.name}</div>
+        <div class="popup-alert-date">${dateStr} · <span class="popup-accent-text">${daysText}</span></div>
+      </div>
+    `;
+    alertEl.style.display = "flex";
+    return;
   }
   
   alertEl.style.display = "none";
@@ -712,7 +710,36 @@ function renderBacklog() {
     const label = document.createElement("span");
     label.className = "b-label" + (b.done ? " done" : "");
     label.textContent = b.text;
+    label.style.flex = "1";
     item.appendChild(label);
+
+    if (b.hasQuantity) {
+      const decFn = async () => {
+        if (b.completedQuantity > 0) {
+          b.completedQuantity--;
+          if (b.done && b.completedQuantity < b.targetQuantity) b.done = false;
+          await setStorage({ backlog });
+          renderBacklog();
+          syncBadge();
+        }
+      };
+
+      const incFn = async () => {
+        if (b.completedQuantity < b.targetQuantity) {
+          b.completedQuantity++;
+          if (b.completedQuantity === b.targetQuantity) {
+            b.done = true;
+            showToast("Sub-tasks completed!");
+          }
+          await setStorage({ backlog });
+          renderBacklog();
+          syncBadge();
+        }
+      };
+
+      const qtyContainer = createQuantityPillUI(b, decFn, incFn, true);
+      item.appendChild(qtyContainer);
+    }
 
     const del = document.createElement("button");
     del.className = "p-item-delete";
@@ -727,11 +754,22 @@ function renderBacklog() {
 }
 
 function updateBacklogProgress() {
-  const total = backlog.length;
-  const done = backlog.filter(b => b.done).length;
-  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  const totalItems = backlog.length;
+  let completedItems = 0;
+  let totalScore = 0;
+  
+  backlog.forEach(item => {
+    if (item.done) completedItems++;
+    if (item.hasQuantity && item.targetQuantity > 0) {
+      totalScore += (item.completedQuantity / item.targetQuantity);
+    } else {
+      totalScore += item.done ? 1 : 0;
+    }
+  });
+
+  const pct = totalItems === 0 ? 0 : Math.round((totalScore / totalItems) * 100);
   document.getElementById("b-fill").style.width = pct + "%";
-  document.getElementById("b-text").textContent = `${done} of ${total} complete (${pct}%)`;
+  document.getElementById("b-text").textContent = `${completedItems} of ${totalItems} complete (${pct}%)`;
 }
 
 async function syncBadge() {
@@ -741,12 +779,34 @@ async function syncBadge() {
 
 async function addBacklog() {
   const input = document.getElementById("b-input");
+  const trackCb = document.getElementById("b-track-qty");
+  const targetIn = document.getElementById("b-target");
   const text = input.value.trim();
   if (!text) { input.focus(); return; }
 
-  backlog.push({ id: generateId(), text, done: false, addedAt: new Date().toISOString() });
+  const hasQuantity = trackCb ? trackCb.checked : false;
+  let targetQuantity = 0;
+  if (hasQuantity) {
+    targetQuantity = parseInt(targetIn.value, 10);
+    if (isNaN(targetQuantity) || targetQuantity <= 0) {
+      showToast("Please enter a valid target quantity.");
+      targetIn.focus();
+      return;
+    }
+  }
+
+  const newItem = { id: generateId(), text, done: false, addedAt: new Date().toISOString() };
+  if (hasQuantity) {
+    newItem.hasQuantity = true;
+    newItem.targetQuantity = targetQuantity;
+    newItem.completedQuantity = 0;
+  }
+
+  backlog.push(newItem);
   await setStorage({ backlog });
   input.value = "";
+  if (trackCb) trackCb.checked = false;
+  if (targetIn) { targetIn.value = ""; targetIn.style.display = "none"; }
   input.focus();
   renderBacklog();
   syncBadge();
@@ -757,6 +817,10 @@ async function toggleBacklog(id) {
   const item = backlog.find(b => b.id === id);
   if (!item) return;
   item.done = !item.done;
+  if (item.hasQuantity) {
+    if (item.done) item.completedQuantity = item.targetQuantity;
+    else item.completedQuantity = 0;
+  }
   await setStorage({ backlog });
   renderBacklog();
   syncBadge();
@@ -780,6 +844,14 @@ async function deleteBacklog(id) {
 
 document.getElementById("b-add").addEventListener("click", addBacklog);
 document.getElementById("b-input").addEventListener("keydown", e => { if (e.key === "Enter") addBacklog(); });
+
+const bTrackQty = document.getElementById("b-track-qty");
+const bTarget = document.getElementById("b-target");
+if (bTrackQty && bTarget) {
+  bTrackQty.addEventListener("change", () => {
+    bTarget.style.display = bTrackQty.checked ? "block" : "none";
+  });
+}
 
 // === Timer Tab ===
 let timerInterval = null;

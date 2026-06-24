@@ -1,5 +1,8 @@
 import { getStorage } from "./storage.js";
 
+let currentHeatmapDate = new Date();
+currentHeatmapDate.setDate(1);
+
 function getThemeColors() {
   const style = getComputedStyle(document.documentElement);
   return {
@@ -229,6 +232,164 @@ async function drawAllCharts(container) {
   }
 }
 
+async function drawTodoHeatmap(container) {
+  let heatmapCard = container.querySelector("#todo-heatmap-card");
+  let isNew = false;
+
+  if (!heatmapCard) {
+    isNew = true;
+    heatmapCard = document.createElement("div");
+    heatmapCard.id = "todo-heatmap-card";
+    heatmapCard.className = "chart-card";
+    heatmapCard.style.marginBottom = "16px";
+    
+    const wrapper = container.querySelector(".analytics-wrapper");
+    const grid = wrapper.querySelector(".chart-grid");
+    wrapper.insertBefore(heatmapCard, grid);
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "16px";
+
+    const prevBtn = document.createElement("button");
+    prevBtn.innerHTML = "&lt;";
+    prevBtn.style.padding = "2px 8px";
+    prevBtn.style.backgroundColor = "transparent";
+    prevBtn.style.border = "1px solid var(--text-primary)";
+    prevBtn.style.color = "var(--text-primary)";
+    prevBtn.style.borderRadius = "4px";
+    prevBtn.style.cursor = "pointer";
+    prevBtn.style.fontWeight = "bold";
+    prevBtn.style.transition = "opacity 0.2s";
+    prevBtn.onmouseover = () => prevBtn.style.opacity = "0.7";
+    prevBtn.onmouseout = () => prevBtn.style.opacity = "1";
+    prevBtn.onclick = () => {
+      currentHeatmapDate.setMonth(currentHeatmapDate.getMonth() - 1);
+      drawTodoHeatmap(container);
+    };
+
+    const nextBtn = document.createElement("button");
+    nextBtn.innerHTML = "&gt;";
+    nextBtn.style.padding = "2px 8px";
+    nextBtn.style.backgroundColor = "transparent";
+    nextBtn.style.border = "1px solid var(--text-primary)";
+    nextBtn.style.color = "var(--text-primary)";
+    nextBtn.style.borderRadius = "4px";
+    nextBtn.style.cursor = "pointer";
+    nextBtn.style.fontWeight = "bold";
+    nextBtn.style.transition = "opacity 0.2s";
+    nextBtn.onmouseover = () => nextBtn.style.opacity = "0.7";
+    nextBtn.onmouseout = () => nextBtn.style.opacity = "1";
+    nextBtn.onclick = () => {
+      currentHeatmapDate.setMonth(currentHeatmapDate.getMonth() + 1);
+      drawTodoHeatmap(container);
+    };
+
+    const title = document.createElement("div");
+    title.id = "todo-heatmap-title";
+    title.style.fontWeight = "bold";
+    title.style.fontSize = "14px";
+    
+    header.appendChild(prevBtn);
+    header.appendChild(title);
+    header.appendChild(nextBtn);
+    heatmapCard.appendChild(header);
+
+    const gridWrapper = document.createElement("div");
+    gridWrapper.id = "todo-heatmap-grid-wrapper";
+    gridWrapper.style.transition = "opacity 0.2s ease-in-out";
+    heatmapCard.appendChild(gridWrapper);
+  }
+
+  const title = heatmapCard.querySelector("#todo-heatmap-title");
+  const colors = getThemeColors();
+  title.style.color = colors.textPrimary;
+  
+  const options = { month: 'long', year: 'numeric' };
+  title.textContent = "Todo Heatmap - " + currentHeatmapDate.toLocaleDateString(undefined, options);
+
+  const gridWrapper = heatmapCard.querySelector("#todo-heatmap-grid-wrapper");
+  gridWrapper.style.opacity = "0.5";
+
+  const data = await getStorage(["todoHistory"]);
+  const todoHistory = data.todoHistory || {};
+
+  gridWrapper.innerHTML = "";
+
+  const gridContainer = document.createElement("div");
+  gridContainer.style.display = "flex";
+  gridContainer.style.justifyContent = "center";
+  gridContainer.style.padding = "10px 0";
+
+  const gridDiv = document.createElement("div");
+  gridDiv.style.display = "grid";
+  gridDiv.style.gridTemplateColumns = "repeat(7, 16px)";
+  gridDiv.style.gridAutoRows = "16px";
+  gridDiv.style.gap = "6px";
+
+  const daysOfWeek = ["S", "M", "T", "W", "T", "F", "S"];
+  daysOfWeek.forEach(d => {
+    const dLabel = document.createElement("div");
+    dLabel.textContent = d;
+    dLabel.style.textAlign = "center";
+    dLabel.style.fontSize = "10px";
+    dLabel.style.lineHeight = "16px";
+    dLabel.style.color = colors.textSecondary;
+    gridDiv.appendChild(dLabel);
+  });
+
+  const year = currentHeatmapDate.getFullYear();
+  const month = currentHeatmapDate.getMonth();
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  for (let i = 0; i < firstDay; i++) {
+    const empty = document.createElement("div");
+    gridDiv.appendChild(empty);
+  }
+
+  for (let i = 1; i <= daysInMonth; i++) {
+    const cell = document.createElement("div");
+    cell.style.borderRadius = "3px";
+
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`;
+    const dayData = todoHistory[dateStr];
+
+    if (dayData && dayData.total > 0) {
+      const pct = dayData.completed / dayData.total;
+      if (pct === 1) {
+        cell.style.backgroundColor = "#ffffff";
+        cell.style.color = "#000000";
+      } else if (pct >= 0.5) {
+        cell.style.backgroundColor = "#555555";
+        cell.style.color = "#ffffff";
+      } else {
+        cell.style.backgroundColor = "#000000";
+        cell.style.border = "1px solid #ffffff";
+        cell.style.color = "#ffffff";
+        cell.style.boxSizing = "border-box";
+      }
+      cell.title = `${dayData.completed} / ${dayData.total} tasks completed`;
+    } else {
+      cell.style.backgroundColor = colors.bgPrimary;
+      cell.style.color = colors.textSecondary;
+      cell.style.opacity = "0.5";
+    }
+
+    gridDiv.appendChild(cell);
+  }
+
+  gridContainer.appendChild(gridDiv);
+  gridWrapper.appendChild(gridContainer);
+  
+  // Trigger reflow and fade in
+  void gridWrapper.offsetWidth;
+  gridWrapper.style.opacity = "1";
+}
+
 export async function initAnalytics(container) {
   container.innerHTML = "";
 
@@ -262,8 +423,10 @@ export async function initAnalytics(container) {
   container.appendChild(wrapper);
 
   await drawAllCharts(container);
+  await drawTodoHeatmap(container);
 }
 
 export async function refreshAnalytics(container) {
   await drawAllCharts(container);
+  await drawTodoHeatmap(container);
 }

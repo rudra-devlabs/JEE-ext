@@ -1,4 +1,5 @@
 import { getStorage, setStorage } from './storage.js';
+import { createQuantityOptionsRow, createQuantityPillUI } from './ui.js';
 
 function getTodayString() {
   const d = new Date();
@@ -26,6 +27,22 @@ function generateId() {
   return crypto.randomUUID();
 }
 
+async function syncTodoHistory(todos) {
+  const data = await getStorage(["todoHistory"]);
+  let history = data.todoHistory || {};
+  
+  const dates = [...new Set(todos.map(t => t.date).filter(Boolean))];
+  dates.forEach(date => {
+    const dayTasks = todos.filter(t => t.date === date);
+    history[date] = {
+      total: dayTasks.length,
+      completed: dayTasks.filter(t => t.done).length
+    };
+  });
+  
+  await setStorage({ todoHistory: history });
+}
+
 function showToast(message) {
   document.dispatchEvent(new CustomEvent("show-toast", {
     detail: { message }
@@ -47,7 +64,7 @@ export async function initTodo(container) {
   });
 
   if (todos.length !== originalLength) {
-    await setStorage({ todos });
+    await setStorage({ todos }); await syncTodoHistory(todos);
   }
 
   container.innerHTML = "";
@@ -78,6 +95,55 @@ export async function initTodo(container) {
   inputContainer.appendChild(todoInput);
   inputContainer.appendChild(addBtn);
   wrapper.appendChild(inputContainer);
+
+  const { row: optionsRow, checkbox: trackCb, input: targetIn } = createQuantityOptionsRow("todo");
+  wrapper.appendChild(optionsRow);
+
+  const progressSection = document.createElement("div");
+  progressSection.className = "progress-section";
+  progressSection.style.marginBottom = "24px";
+
+  const progressBar = document.createElement("div");
+  progressBar.className = "progress-bar";
+  const progressFill = document.createElement("div");
+  progressFill.className = "progress-fill";
+  progressBar.appendChild(progressFill);
+  progressSection.appendChild(progressBar);
+
+  const progressText = document.createElement("div");
+  progressText.className = "progress-bar-text";
+  progressSection.appendChild(progressText);
+
+  wrapper.appendChild(progressSection);
+
+  function updateProgressBar() {
+    const todayStr = getTodayString();
+    const todaysTasks = todos.filter(t => t.date === todayStr);
+
+    const totalItems = todaysTasks.length;
+    let completedItems = 0;
+    let totalScore = 0;
+
+    todaysTasks.forEach(item => {
+      if (item.done) completedItems++;
+      if (item.hasQuantity && item.targetQuantity > 0) {
+        totalScore += (item.completedQuantity / item.targetQuantity);
+      } else {
+        totalScore += item.done ? 1 : 0;
+      }
+    });
+
+    const pct = totalItems === 0 ? 0 : Math.round((totalScore / totalItems) * 100);
+
+    if (progressFill) progressFill.style.width = `${pct}%`;
+    if (progressText) {
+      if (totalItems === 0) {
+        progressText.textContent = "No tasks for today yet.";
+      } else {
+        progressText.textContent = `${completedItems} of ${totalItems} tasks complete (${pct}%)`;
+      }
+    }
+  }
 
   const listsContainer = document.createElement("div");
   listsContainer.className = "todo-lists-container";
@@ -149,9 +215,42 @@ export async function initTodo(container) {
           const span = document.createElement("span");
           span.className = "todo-text";
           span.textContent = task.text;
+          span.style.flex = "1";
 
           const rightActions = document.createElement("div");
           rightActions.className = "todo-actions";
+          rightActions.style.display = "flex";
+          rightActions.style.alignItems = "center";
+          rightActions.style.gap = "8px";
+
+          if (task.hasQuantity) {
+            const decFn = async () => {
+              if (task.completedQuantity > 0 && isToday) {
+                task.completedQuantity--;
+                if (task.done && task.completedQuantity < task.targetQuantity) {
+                  task.done = false;
+                  checkbox.checked = false;
+                }
+                await setStorage({ todos }); await syncTodoHistory(todos);
+                renderTodos();
+              }
+            };
+            const incFn = async () => {
+              if (task.completedQuantity < task.targetQuantity && isToday) {
+                task.completedQuantity++;
+                if (task.completedQuantity === task.targetQuantity) {
+                  task.done = true;
+                  checkbox.checked = true;
+                  showToast("Sub-tasks completed!");
+                }
+                await setStorage({ todos }); await syncTodoHistory(todos);
+                renderTodos();
+              }
+            };
+            const qtyContainer = createQuantityPillUI(task, decFn, incFn, false);
+            qtyContainer.style.marginRight = "0"; // avoid extra margin pushing delete btn away
+            rightActions.appendChild(qtyContainer);
+          }
 
           const delBtn = document.createElement("button");
           delBtn.className = "icon-btn delete-btn";
@@ -159,14 +258,18 @@ export async function initTodo(container) {
           
           delBtn.onclick = async () => {
             todos = todos.filter(t => t.id !== task.id);
-            await setStorage({ todos });
+            await setStorage({ todos }); await syncTodoHistory(todos);
             renderTodos();
             showToast("Task deleted");
           };
 
           checkbox.onchange = async () => {
             task.done = checkbox.checked;
-            await setStorage({ todos });
+            if (task.hasQuantity) {
+              if (task.done) task.completedQuantity = task.targetQuantity;
+              else task.completedQuantity = 0;
+            }
+            await setStorage({ todos }); await syncTodoHistory(todos);
             renderTodos();
           };
 
@@ -201,11 +304,24 @@ export async function initTodo(container) {
       daySection.appendChild(ul);
       listsContainer.appendChild(daySection);
     });
+    
+    updateProgressBar();
   };
 
   const addTask = async () => {
     const text = todoInput.value.trim();
     if (!text) return;
+
+    const hasQuantity = trackCb ? trackCb.checked : false;
+    let targetQuantity = 0;
+    if (hasQuantity) {
+      targetQuantity = parseInt(targetIn.value, 10);
+      if (isNaN(targetQuantity) || targetQuantity <= 0) {
+        showToast("Please enter a valid target quantity.");
+        targetIn.focus();
+        return;
+      }
+    }
 
     const newTask = {
       id: generateId(),
@@ -214,9 +330,17 @@ export async function initTodo(container) {
       date: getTodayString()
     };
 
+    if (hasQuantity) {
+      newTask.hasQuantity = true;
+      newTask.targetQuantity = targetQuantity;
+      newTask.completedQuantity = 0;
+    }
+
     todos.push(newTask);
-    await setStorage({ todos });
+    await setStorage({ todos }); await syncTodoHistory(todos);
     todoInput.value = "";
+    if (trackCb) trackCb.checked = false;
+    if (targetIn) { targetIn.value = ""; targetIn.style.display = "none"; }
     renderTodos();
     showToast("Task added");
   };

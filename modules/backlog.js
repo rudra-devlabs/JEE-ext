@@ -1,4 +1,5 @@
 import { getStorage, setStorage, generateId } from "./storage.js";
+import { createQuantityOptionsRow, createQuantityPillUI } from "./ui.js";
 
 let backlog = [];
 let searchQuery = "";
@@ -22,15 +23,26 @@ function getPendingCount() {
 }
 
 function updateProgressBar(container) {
-  const total = backlog.length;
-  const done = backlog.filter((item) => item.done).length;
-  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  const totalItems = backlog.length;
+  let completedItems = 0;
+  let totalScore = 0;
+  
+  backlog.forEach(item => {
+    if (item.done) completedItems++;
+    if (item.hasQuantity && item.targetQuantity > 0) {
+      totalScore += (item.completedQuantity / item.targetQuantity);
+    } else {
+      totalScore += item.done ? 1 : 0;
+    }
+  });
+
+  const pct = totalItems === 0 ? 0 : Math.round((totalScore / totalItems) * 100);
 
   const barFill = container.querySelector(".progress-fill");
   const barText = container.querySelector(".progress-bar-text");
 
   if (barFill) barFill.style.width = `${pct}%`;
-  if (barText) barText.textContent = `${done} of ${total} complete (${pct}%)`;
+  if (barText) barText.textContent = `${completedItems} of ${totalItems} complete (${pct}%)`;
 }
 
 async function syncBadge() {
@@ -77,7 +89,40 @@ function renderList(container) {
     const label = document.createElement("span");
     label.className = "backlog-label" + (item.done ? " done" : "");
     label.textContent = item.text;
+    label.style.flex = "1";
     row.appendChild(label);
+
+    if (item.hasQuantity) {
+      const decFn = async () => {
+        if (item.completedQuantity > 0) {
+          item.completedQuantity--;
+          if (item.done && item.completedQuantity < item.targetQuantity) {
+            item.done = false;
+          }
+          await setStorage({ backlog });
+          renderList(container);
+          updateProgressBar(container);
+          syncBadge();
+        }
+      };
+
+      const incFn = async () => {
+        if (item.completedQuantity < item.targetQuantity) {
+          item.completedQuantity++;
+          if (item.completedQuantity === item.targetQuantity) {
+            item.done = true;
+            showToast("Sub-tasks completed!");
+          }
+          await setStorage({ backlog });
+          renderList(container);
+          updateProgressBar(container);
+          syncBadge();
+        }
+      };
+
+      const qtyContainer = createQuantityPillUI(item, decFn, incFn, false);
+      row.appendChild(qtyContainer);
+    }
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "delete-btn";
@@ -93,10 +138,24 @@ function renderList(container) {
 
 async function addItem(container) {
   const input = container.querySelector(".backlog-input");
+  const trackCb = container.querySelector("#backlog-track-qty");
+  const targetIn = container.querySelector(".backlog-target-input");
+
   const text = input.value.trim();
   if (!text) {
     input.focus();
     return;
+  }
+
+  const hasQuantity = trackCb ? trackCb.checked : false;
+  let targetQuantity = 0;
+  if (hasQuantity) {
+    targetQuantity = parseInt(targetIn.value, 10);
+    if (isNaN(targetQuantity) || targetQuantity <= 0) {
+      showToast("Please enter a valid target quantity.");
+      targetIn.focus();
+      return;
+    }
   }
 
   const newItem = {
@@ -106,9 +165,21 @@ async function addItem(container) {
     addedAt: new Date().toISOString()
   };
 
+  if (hasQuantity) {
+    newItem.hasQuantity = true;
+    newItem.targetQuantity = targetQuantity;
+    newItem.completedQuantity = 0;
+  }
+
   backlog.push(newItem);
   await setStorage({ backlog });
+  
   input.value = "";
+  if (trackCb) trackCb.checked = false;
+  if (targetIn) {
+    targetIn.value = "";
+    targetIn.style.display = "none";
+  }
   input.focus();
 
   renderList(container);
@@ -121,6 +192,15 @@ async function toggleItem(id, container) {
   const item = backlog.find((b) => b.id === id);
   if (!item) return;
   item.done = !item.done;
+  
+  if (item.hasQuantity) {
+    if (item.done) {
+      item.completedQuantity = item.targetQuantity;
+    } else {
+      item.completedQuantity = 0;
+    }
+  }
+  
   await setStorage({ backlog });
   renderList(container);
   updateProgressBar(container);
@@ -182,6 +262,9 @@ export async function initBacklog(container) {
   inputRow.appendChild(addBtn);
 
   wrapper.appendChild(inputRow);
+
+  const { row: optionsRow } = createQuantityOptionsRow("backlog");
+  wrapper.appendChild(optionsRow);
 
   const searchInput = document.createElement("input");
   searchInput.type = "text";

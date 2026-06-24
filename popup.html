@@ -101,6 +101,11 @@
           <input type="text" id="b-input" class="p-input" placeholder="Chapter / lecture..." autocomplete="off">
           <button id="b-add" class="p-btn p-btn-primary">Add</button>
         </div>
+        <div class="p-row" style="margin-top: 8px; justify-content: flex-start; gap: 8px;">
+          <input type="checkbox" id="b-track-qty" class="custom-checkbox">
+          <label for="b-track-qty" style="font-size: 12px; color: var(--text-secondary); cursor:pointer;">Track Quantity</label>
+          <input type="number" id="b-target" class="p-input p-input-sm" placeholder="Target" min="1" style="display:none; width: 80px; padding: 2px 6px;">
+        </div>
       </div>
       <div class="b-progress-wrap">
         <div class="b-progress-bar"><div class="b-progress-fill" id="b-fill"></div></div>
@@ -145,7 +150,6 @@
 
   <script src="libs/marked/marked.min.js"></script>
   <script src="libs/katex/katex.min.js"></script>
-  <script src="libs/puter.js"></script>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

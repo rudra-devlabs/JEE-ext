@@ -89,9 +89,16 @@ async function recordSession() {
 }
 
 function formatTime(seconds) {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const isNegative = seconds < 0;
+  const absSecs = Math.abs(seconds);
+  const h = Math.floor(absSecs / 3600);
+  const m = Math.floor((absSecs % 3600) / 60);
+  const s = Math.floor(absSecs % 60);
+  const sign = isNegative ? "-" : "";
+  if (h > 0) {
+    return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  return `${sign}${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export async function initTimer(container) {
@@ -142,29 +149,45 @@ export async function initTimer(container) {
 
   const customWrap = document.createElement("div");
   customWrap.className = "custom-preset-wrap";
+  customWrap.style.display = "flex";
+  customWrap.style.flexDirection = "column";
 
   const customBtn = document.createElement("button");
   customBtn.className = "btn preset-btn";
   customBtn.textContent = "Custom";
-  customBtn.addEventListener("click", () => {
-    customInput.style.display = customInput.style.display === "none" ? "inline-block" : "none";
-  });
-  customWrap.appendChild(customBtn);
 
-  const customInput = document.createElement("input");
-  customInput.type = "number";
-  customInput.className = "input-field custom-minutes";
-  customInput.min = "1";
-  customInput.max = "120";
-  customInput.value = "30";
-  customInput.style.display = "none";
-  customInput.style.width = "60px";
-  customInput.addEventListener("change", () => {
-    const mins = parseInt(customInput.value) || 30;
-    const brk = Math.max(1, Math.round(mins / 5));
-    setPreset(mins, brk, container);
+  const customInputs = document.createElement("div");
+  customInputs.style.display = "none";
+  customInputs.style.gap = "4px";
+  customInputs.style.alignItems = "center";
+  customInputs.style.marginTop = "6px";
+  
+  customInputs.innerHTML = `
+    <input type="number" id="c-hr" class="input-field" placeholder="HH" min="0" style="width:46px; padding:4px; text-align:center;">:
+    <input type="number" id="c-min" class="input-field" placeholder="MM" min="0" max="59" style="width:46px; padding:4px; text-align:center;">:
+    <input type="number" id="c-sec" class="input-field" placeholder="SS" min="0" max="59" style="width:46px; padding:4px; text-align:center;">
+    <button class="btn btn-primary" id="c-set" style="padding:4px 10px; margin-left:4px;">Set</button>
+  `;
+
+  customBtn.addEventListener("click", () => {
+    customInputs.style.display = customInputs.style.display === "none" ? "flex" : "none";
   });
-  customWrap.appendChild(customInput);
+  
+  customWrap.appendChild(customBtn);
+  customWrap.appendChild(customInputs);
+
+  const btnSet = customInputs.querySelector("#c-set");
+  btnSet.addEventListener("click", () => {
+    const hr = parseInt(customInputs.querySelector("#c-hr").value) || 0;
+    const min = parseInt(customInputs.querySelector("#c-min").value) || 0;
+    const sec = parseInt(customInputs.querySelector("#c-sec").value) || 0;
+    
+    const totalMins = (hr * 60) + min + (sec / 60);
+    if (totalMins > 0) {
+      const brk = Math.max(1, Math.round(totalMins / 5));
+      setPreset(totalMins, brk, container);
+    }
+  });
 
   presets.appendChild(customWrap);
   wrapper.appendChild(presets);
@@ -214,7 +237,17 @@ export async function initTimer(container) {
   timeText.setAttribute("font-size", "42");
   timeText.setAttribute("font-weight", "700");
   timeText.setAttribute("font-family", "monospace");
-  timeText.textContent = formatTime(focusDuration * 60);
+  
+  function updateTimeText(str) {
+    timeText.textContent = str;
+    if (str.length > 5) {
+      timeText.setAttribute("font-size", "34");
+    } else {
+      timeText.setAttribute("font-size", "42");
+    }
+  }
+
+  updateTimeText(formatTime(focusDuration * 60));
   svg.appendChild(timeText);
 
   display.appendChild(svg);
@@ -263,20 +296,28 @@ export async function initTimer(container) {
     if (!isRunning || !endTime) return;
 
     const now = Date.now();
-    const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
+    const remaining = Math.ceil((endTime - now) / 1000);
     const totalSeconds = (currentMode === "focus" ? focusDuration : breakDuration) * 60;
     const elapsed = totalSeconds - remaining;
-    const pct = totalSeconds > 0 ? elapsed / totalSeconds : 0;
+    const pct = totalSeconds > 0 ? Math.min(1, Math.max(0, elapsed / totalSeconds)) : 0;
     const offset = circumference * (1 - pct);
 
     progressCircle.setAttribute("stroke-dashoffset", offset);
-    timeText.textContent = formatTime(remaining);
+    updateTimeText(formatTime(remaining));
 
-    if (remaining <= 0) {
+    if (remaining <= 0 && remaining >= -60) {
+      progressCircle.setAttribute("stroke", "#ff4444");
+      timeText.setAttribute("fill", "#ff4444");
+      playBeep();
+    } else {
+      progressCircle.setAttribute("stroke", "var(--accent, #7c5cfc)");
+      timeText.setAttribute("fill", "var(--text-primary, #e0e0e0)");
+    }
+
+    if (remaining < -60) {
       clearInterval(timerInterval);
       timerInterval = null;
       isRunning = false;
-      playBeep();
 
       if (currentMode === "focus") {
         recordSession().then(async (updatedTimer) => {
@@ -325,12 +366,52 @@ export async function initTimer(container) {
       timerInterval = null;
       isRunning = false;
       startPauseBtn.textContent = "Start";
+      
+      const remaining = endTime ? Math.ceil((endTime - Date.now()) / 1000) : 0;
+      if (remaining <= 0) {
+        if (currentMode === "focus") {
+          recordSession().then(async (updatedTimer) => {
+            const flameSvgText = await getIconSvg('flame');
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(flameSvgText, 'image/svg+xml');
+            const flameSvg = doc.documentElement;
+            flameSvg.setAttribute('width', '16');
+            flameSvg.setAttribute('height', '16');
+            flameSvg.style.verticalAlign = 'text-bottom';
+            sessionInfo.innerHTML = `<span>Today: <strong>${updatedTimer.sessionsToday || 0}</strong> sessions</span><span>Streak: <strong>${updatedTimer.streak || 0}</strong> days </span>`;
+            sessionInfo.querySelector('span:last-child').appendChild(flameSvg);
+            showToast("Focus session complete!");
+          });
+          currentMode = "break";
+          modeLabel.textContent = "Break";
+          endTime = null;
+          saveTimerState();
+          updateTimeText(formatTime(breakDuration * 60));
+          progressCircle.setAttribute("stroke-dashoffset", "0");
+          progressCircle.setAttribute("stroke", "var(--accent, #7c5cfc)");
+          timeText.setAttribute("fill", "var(--text-primary, #e0e0e0)");
+          startPauseBtn.textContent = "Start";
+        } else {
+          currentMode = "focus";
+          modeLabel.textContent = "Focus";
+          endTime = null;
+          saveTimerState();
+          updateTimeText(formatTime(focusDuration * 60));
+          progressCircle.setAttribute("stroke-dashoffset", "0");
+          progressCircle.setAttribute("stroke", "var(--accent, #7c5cfc)");
+          timeText.setAttribute("fill", "var(--text-primary, #e0e0e0)");
+          startPauseBtn.textContent = "Start";
+          showToast("Break complete! Ready for next session?");
+        }
+        return;
+      }
+      
       saveTimerState();
       try {
         chrome.runtime.sendMessage({ action: "stopTimer" });
       } catch (e) {}
     } else {
-      const remaining = endTime ? Math.max(0, Math.ceil((endTime - Date.now()) / 1000)) : (currentMode === "focus" ? focusDuration : breakDuration) * 60;
+      const remaining = endTime ? Math.ceil((endTime - Date.now()) / 1000) : (currentMode === "focus" ? focusDuration : breakDuration) * 60;
       endTime = Date.now() + remaining * 1000;
       isRunning = true;
       startPauseBtn.textContent = "Pause";
@@ -352,8 +433,10 @@ export async function initTimer(container) {
     currentMode = "focus";
     modeLabel.textContent = "Focus";
     startPauseBtn.textContent = "Start";
-    timeText.textContent = formatTime(focusDuration * 60);
+    updateTimeText(formatTime(focusDuration * 60));
     progressCircle.setAttribute("stroke-dashoffset", "0");
+    progressCircle.setAttribute("stroke", "var(--accent, #7c5cfc)");
+    timeText.setAttribute("fill", "var(--text-primary, #e0e0e0)");
     saveTimerState();
     try {
       chrome.runtime.sendMessage({ action: "stopTimer" });
@@ -367,7 +450,7 @@ export async function initTimer(container) {
       endTime = null;
       currentMode = "focus";
       modeLabel.textContent = "Focus";
-      timeText.textContent = formatTime(focusDuration * 60);
+      updateTimeText(formatTime(focusDuration * 60));
       progressCircle.setAttribute("stroke-dashoffset", "0");
       startPauseBtn.textContent = "Start";
     }
@@ -390,3 +473,22 @@ export async function initTimer(container) {
     updateDisplay();
   }
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === "playClassBeep") {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.frequency.value = 523.25; // High C for class alarm
+      oscillator.type = "sine";
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.6);
+      setTimeout(() => ctx.close(), 700);
+    } catch (e) {}
+  }
+});

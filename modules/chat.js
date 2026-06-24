@@ -1,4 +1,5 @@
 import { getStorage, setStorage } from "./storage.js";
+import { getIconSvg } from "./ui.js";
 
 const MISTRAL_API_ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
 const ALIBABA_API_ENDPOINT = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions";
@@ -8,19 +9,6 @@ const GEMINI_API_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/op
 const CEREBRAS_API_ENDPOINT = "https://api.cerebras.ai/v1/chat/completions";
 
 export const MODELS = [
-  { id: "openai/gpt-5.5", label: "GPT-5.5", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "anthropic/claude-opus-4-8", label: "Claude Opus 4.8", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro", group: "Puter (Free)", provider: "puter" },
-  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "x-ai/grok-4.3", label: "Grok 4.3", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "qwen/qwen3.7-max", label: "Qwen 3.7 Max", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Puter (Free)", provider: "puter" },
-  { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "moonshotai/kimi-k2.6", label: "Kimi K2.6", group: "Puter (Free)", provider: "puter" },
-  { id: "microsoft/phi-4", label: "Phi-4", group: "Puter (Free)", provider: "puter" },
-  { id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "gpt-4o", label: "GPT-4o", group: "Puter (Free)", provider: "puter", vision: true },
-  { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro", group: "Puter (Free)", provider: "puter", vision: true },
   { id: "llama-3.3-70b-versatile", label: "Llama 3.3", params: "70B", group: "Groq Flagship", provider: "groq" },
   { id: "qwen/qwen3.6-27b", label: "Qwen 3.6", params: "27B", group: "Groq Experimental", provider: "groq" },
   { id: "qwen/qwen3-32b", label: "Qwen 3", params: "32B", group: "Groq Experimental", provider: "groq" },
@@ -70,7 +58,7 @@ let groqApiKey = "";
 let openRouterApiKey = "";
 let geminiApiKey = "";
 let cerebrasApiKey = "";
-let selectedModel = "claude-3-5-sonnet";
+let selectedModel = "llama-3.3-70b-versatile";
 let messages = [];
 let isLoading = false;
 let pendingImages = [];
@@ -86,6 +74,53 @@ function getTextContent(msg) {
     return txtPart ? txtPart.text : "Image Context";
   }
   return "";
+}
+
+function estimateTokensFromText(text) {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
+function estimateTokensFromMessages(msgs) {
+  let total = 0;
+  for (const msg of msgs) {
+    if (typeof msg.content === "string") {
+      total += estimateTokensFromText(msg.content);
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === "text") total += estimateTokensFromText(part.text);
+        else if (part.type === "image_url") total += 765;
+      }
+    }
+  }
+  return total;
+}
+
+function buildResponseMetrics({ usage, messagesWithSystem, completionText, ttftMs }) {
+  if (ttftMs == null) return null;
+
+  let promptTokens = usage?.prompt_tokens;
+  let completionTokens = usage?.completion_tokens;
+  let estimated = false;
+
+  if (promptTokens == null) {
+    promptTokens = estimateTokensFromMessages(messagesWithSystem);
+    estimated = true;
+  }
+  if (completionTokens == null) {
+    completionTokens = estimateTokensFromText(completionText);
+    estimated = true;
+  }
+
+  return { promptTokens, completionTokens, ttftMs, estimated };
+}
+
+function formatChatMetrics(metrics) {
+  const prefix = metrics.estimated ? "~" : "";
+  const sent = `${prefix}${metrics.promptTokens.toLocaleString()}`;
+  const received = `${prefix}${metrics.completionTokens.toLocaleString()}`;
+  const ttft = `${metrics.ttftMs.toLocaleString()}ms`;
+  return `↑ ${sent} sent · ↓ ${received} received · ${ttft} to first token`;
 }
 
 async function generateChatTitle(container, sessionId, userMsg, aiMsg) {
@@ -109,43 +144,25 @@ User: ${userText}
 AI: ${aiText}`;
 
     let title = "";
-    if (provider === "puter") {
-      const data = await getStorage(["chatSettings"]);
-      const puterApiKey = (data.chatSettings?.puterApiKey || "").replace(/^["']|["']$/g, '');
-      if (puterApiKey && window.puter && typeof window.puter.setAuthToken === "function") {
-        window.puter.setAuthToken(puterApiKey);
-      }
-      
-      const response = await window.puter.ai.chat([{role: "user", content: prompt}], { model: selectedModel });
-      if (response && response.message && response.message.content) {
-        title = response.message.content;
-      } else if (response && response.text) {
-        title = response.text;
-      } else if (typeof response === "string") {
-        title = response;
-      }
-      title = title.trim().replace(/['"]/g, '');
-    } else {
-      const body = JSON.stringify({
-        model: selectedModel,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        max_tokens: 20
-      });
+    const body = JSON.stringify({
+      model: selectedModel,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
+      max_tokens: 20
+    });
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentKey}`
-        },
-        body: body
-      });
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": provider === "gemini" ? undefined : `Bearer ${currentKey}`
+      },
+      body: body
+    });
 
-      if (response.ok) {
-        const json = await response.json();
-        title = json.choices?.[0]?.message?.content?.trim().replace(/['"]/g, '');
-      }
+    if (response.ok) {
+      const json = await response.json();
+      title = json.choices?.[0]?.message?.content?.trim().replace(/['"]/g, '');
     }
 
     if (title) {
@@ -256,6 +273,491 @@ function renderMarkdownWithMath(text, element) {
   });
 }
 
+function extractQuizFromResponse(text) {
+  if (!text || typeof text !== "string") return null;
+  const codeMatch = text.match(/```json\s*([\s\S]*?)```/i);
+  let rawJson = codeMatch ? codeMatch[1].trim() : text.trim();
+  const firstBrace = rawJson.indexOf('{');
+  const lastBrace = rawJson.lastIndexOf('}');
+  if (firstBrace === -1 || lastBrace === -1) return null;
+  rawJson = rawJson.substring(firstBrace, lastBrace + 1);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (e) {
+    // Robust fallback: replace literal newlines with spaces to fix unescaped newlines in strings
+    try {
+      const noNewlines = rawJson.replace(/\n/g, ' ').replace(/\r/g, '');
+      parsed = JSON.parse(noNewlines);
+    } catch (e2) {
+      return null;
+    }
+  }
+
+  if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) return null;
+
+  // Validate required top-level fields
+  const topic = parsed.topic ? String(parsed.topic) : null;
+    const maxMarks = typeof parsed.maxMarks === 'number' ? parsed.maxMarks : null;
+    const markingScheme = parsed.markingScheme && typeof parsed.markingScheme === 'object'
+      ? {
+          correct: Number(parsed.markingScheme.correct) || 0,
+          incorrect: Number(parsed.markingScheme.incorrect) || 0,
+          unanswered: Number(parsed.markingScheme.unanswered) || 0
+        }
+      : null;
+    const timed = typeof parsed.timed === 'boolean' ? parsed.timed : false;
+    const timeLimitMinutes = typeof parsed.timeLimitMinutes === 'number' ? parsed.timeLimitMinutes : null;
+
+    const normalizedQuestions = parsed.questions.map((q, idx) => {
+      const qText = q.q || q.question;
+      const opts = q.o || q.options;
+      const ans = q.a !== undefined ? q.a : q.answerIndex;
+      const expl = q.e || q.explanation;
+      const diff = q.d || q.difficulty;
+      
+      const options = Array.isArray(opts) ? opts.filter(Boolean).map(String) : [];
+      const answerIndex = Number.isInteger(ans) ? ans : Number(ans);
+      if (!qText || options.length < 2) return null;
+      if (!Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex >= options.length) return null;
+      return {
+        question: String(qText),
+        options,
+        answerIndex,
+        explanation: expl ? String(expl) : "",
+        difficulty: diff ? String(diff) : ""
+      };
+    }).filter(Boolean);
+
+    if (normalizedQuestions.length === 0) return null;
+    return {
+      title: topic || parsed.title || "Generated Quiz",
+      topic: topic || parsed.title || "Generated Quiz",
+      maxMarks: maxMarks !== null ? maxMarks : normalizedQuestions.length * 4,
+      markingScheme: markingScheme || { correct: 4, incorrect: -1, unanswered: 0 },
+      timed: timed !== false,
+      timeLimitMinutes: timeLimitMinutes || normalizedQuestions.length * 2,
+      questions: normalizedQuestions
+    };
+}
+
+function renderQuizCard(bubble, msg, container) {
+  const quiz = msg.quiz;
+  if (!quiz || !Array.isArray(quiz.questions)) {
+    renderMarkdownWithMath(msg.content, bubble);
+    return;
+  }
+
+  if (!msg.quizState) {
+    msg.quizState = { selected: {}, submitted: false, currentQuestion: 0 };
+  }
+
+  bubble.innerHTML = "";
+  
+  const text = msg.content || "";
+  const codeMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  let preText = text;
+  let postText = "";
+  if (codeMatch) {
+    const idx = text.indexOf(codeMatch[0]);
+    preText = text.substring(0, idx);
+    postText = text.substring(idx + codeMatch[0].length);
+  } else {
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      preText = text.substring(0, firstBrace);
+      postText = text.substring(lastBrace + 1);
+    }
+  }
+
+  let existingQuiz = bubble.querySelector('.chat-quiz');
+  let preDiv = bubble.querySelector('.quiz-pre-text');
+  let postDiv = bubble.querySelector('.quiz-post-text');
+
+  if (!existingQuiz) {
+    bubble.innerHTML = "";
+    
+    if (preText.trim()) {
+      preDiv = document.createElement("div");
+      preDiv.className = "quiz-pre-text";
+      renderMarkdownWithMath(preText.trim(), preDiv);
+      bubble.appendChild(preDiv);
+    }
+
+    const quizWrapper = document.createElement("div");
+    quizWrapper.className = "chat-quiz";
+    quizWrapper.style.margin = "12px 0";
+    quizWrapper.style.opacity = "0";
+    quizWrapper.style.transform = "translateY(10px)";
+    quizWrapper.style.transition = "all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)";
+
+    const bar = document.createElement("div");
+    bar.className = "quiz-bar";
+
+    const topicSpan = document.createElement("span");
+    topicSpan.className = "quiz-bar-topic";
+    topicSpan.textContent = quiz.topic || quiz.title || "Quiz";
+
+    const marksSpan = document.createElement("span");
+    marksSpan.className = "quiz-bar-marks";
+    marksSpan.textContent = `Max: ${quiz.maxMarks || quiz.questions.length} marks`;
+
+    const chevron = document.createElement("span");
+    chevron.className = "quiz-bar-chevron";
+    chevron.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+    const openBtn = document.createElement("button");
+    openBtn.className = "quiz-bar-open-btn";
+    openBtn.textContent = "Open";
+
+    bar.appendChild(topicSpan);
+    bar.appendChild(marksSpan);
+    bar.appendChild(chevron);
+    bar.appendChild(openBtn);
+    quizWrapper.appendChild(bar);
+
+    const accordion = document.createElement("div");
+    accordion.className = "quiz-accordion";
+
+    const rows = [
+      { label: "Marking (Correct)", value: `+${(quiz.markingScheme && quiz.markingScheme.correct) || 1}` },
+      { label: "Marking (Incorrect)", value: `${(quiz.markingScheme && quiz.markingScheme.incorrect) || 0}` },
+      { label: "Marking (Unanswered)", value: `${(quiz.markingScheme && quiz.markingScheme.unanswered) || 0}` },
+      { label: "Questions", value: `${quiz.questions.length}` },
+      { label: "Timed", value: quiz.timed ? `Yes — ${quiz.timeLimitMinutes || 30} min` : "No" }
+    ];
+    rows.forEach(r => {
+      const row = document.createElement("div");
+      row.className = "quiz-accordion-row";
+      row.innerHTML = `<span class="quiz-accordion-label">${r.label}</span><span class="quiz-accordion-value">${r.value}</span>`;
+      accordion.appendChild(row);
+    });
+    quizWrapper.appendChild(accordion);
+    bubble.appendChild(quizWrapper);
+
+    let accordionExpanded = false;
+    chevron.addEventListener("click", (e) => {
+      e.stopPropagation();
+      accordionExpanded = !accordionExpanded;
+      accordion.classList.toggle("expanded", accordionExpanded);
+      chevron.classList.toggle("expanded", accordionExpanded);
+      bar.classList.toggle("accordion-open", accordionExpanded);
+    });
+
+    openBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openQuizOverlay(msg, container);
+    });
+
+    requestAnimationFrame(() => {
+      quizWrapper.style.opacity = "1";
+      quizWrapper.style.transform = "translateY(0)";
+    });
+  }
+
+  if (preText.trim()) {
+    if (!preDiv) {
+      preDiv = document.createElement("div");
+      preDiv.className = "quiz-pre-text";
+      bubble.insertBefore(preDiv, bubble.querySelector('.chat-quiz'));
+    }
+    renderMarkdownWithMath(preText.trim(), preDiv);
+  } else if (preDiv) {
+    preDiv.remove();
+  }
+
+  if (postText.trim()) {
+    if (!postDiv) {
+      postDiv = document.createElement("div");
+      postDiv.className = "quiz-post-text";
+      bubble.appendChild(postDiv);
+    }
+    renderMarkdownWithMath(postText.trim(), postDiv);
+  } else if (postDiv) {
+    postDiv.remove();
+  }
+}
+
+function openQuizOverlay(msg, container) {
+  const quiz = msg.quiz;
+  if (!quiz) return;
+  if (!msg.quizState) msg.quizState = { selected: {}, submitted: false, currentQuestion: 0 };
+  const state = msg.quizState;
+
+  // Find the chat-fullscreen-wrapper to position overlay correctly
+  const chatWrapper = container.querySelector(".chat-fullscreen-wrapper");
+  if (!chatWrapper) return;
+  chatWrapper.style.position = "relative";
+
+  // Remove any existing overlay
+  const existing = chatWrapper.querySelector(".quiz-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.className = "quiz-overlay";
+
+  const card = document.createElement("div");
+  card.className = "quiz-card";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "quiz-card-header";
+
+  const topicEl = document.createElement("div");
+  topicEl.className = "quiz-card-header-topic";
+  topicEl.textContent = quiz.topic || quiz.title || "Quiz";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "quiz-card-close-btn";
+  closeBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+
+  header.appendChild(topicEl);
+  header.appendChild(closeBtn);
+  card.appendChild(header);
+
+  // Timer (if timed)
+  let timerInterval = null;
+  let timeRemaining = (quiz.timed && quiz.timeLimitMinutes) ? quiz.timeLimitMinutes * 60 : 0;
+
+  if (quiz.timed && !state.submitted) {
+    const timerEl = document.createElement("div");
+    timerEl.className = "quiz-card-timer";
+    timerEl.id = "quiz-timer";
+    card.appendChild(timerEl);
+
+    if (state.timerRemaining !== undefined) {
+      timeRemaining = state.timerRemaining;
+    }
+
+    function updateTimer() {
+      const m = Math.floor(timeRemaining / 60);
+      const s = timeRemaining % 60;
+      timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    updateTimer();
+    timerInterval = setInterval(() => {
+      timeRemaining--;
+      state.timerRemaining = timeRemaining;
+      if (timeRemaining <= 0) {
+        clearInterval(timerInterval);
+        state.submitted = true;
+        renderQuizOverlayContent(card, msg, container, timerInterval);
+      } else {
+        updateTimer();
+      }
+    }, 1000);
+  }
+
+  // Body container
+  const body = document.createElement("div");
+  body.className = "quiz-card-body";
+  card.appendChild(body);
+
+  // Footer
+  const footer = document.createElement("div");
+  footer.className = "quiz-card-footer";
+  card.appendChild(footer);
+
+  overlay.appendChild(card);
+  chatWrapper.appendChild(overlay);
+
+  // Store timer ref for cleanup
+  overlay._timerInterval = timerInterval;
+
+  closeBtn.addEventListener("click", () => {
+    if (timerInterval) clearInterval(timerInterval);
+    overlay.remove();
+  });
+
+  renderQuizOverlayContent(card, msg, container, timerInterval);
+}
+
+function renderQuizOverlayContent(card, msg, container, timerInterval) {
+  const quiz = msg.quiz;
+  const state = msg.quizState;
+  const body = card.querySelector(".quiz-card-body");
+  const footer = card.querySelector(".quiz-card-footer");
+  if (!body || !footer) return;
+
+  body.innerHTML = "";
+  footer.innerHTML = "";
+
+  if (state.submitted) {
+    renderQuizResults(body, footer, msg, container, card, timerInterval);
+    return;
+  }
+
+  const qIdx = state.currentQuestion || 0;
+  const q = quiz.questions[qIdx];
+
+  // Progress dots
+  const progressDiv = document.createElement("div");
+  progressDiv.className = "quiz-card-progress";
+  progressDiv.innerHTML = `<span>Q${qIdx + 1} of ${quiz.questions.length}</span>`;
+  const dotsDiv = document.createElement("div");
+  dotsDiv.className = "quiz-card-progress-dots";
+  quiz.questions.forEach((_, i) => {
+    const dot = document.createElement("div");
+    dot.className = "quiz-card-progress-dot";
+    if (i === qIdx) dot.classList.add("current");
+    else if (state.selected[i] !== undefined) dot.classList.add("answered");
+    dotsDiv.appendChild(dot);
+  });
+  progressDiv.appendChild(dotsDiv);
+  // Insert progress before body
+  const existingProgress = card.querySelector(".quiz-card-progress");
+  if (existingProgress) existingProgress.remove();
+  card.insertBefore(progressDiv, body);
+
+  // Question text
+  const qText = document.createElement("div");
+  qText.className = "quiz-card-question-text";
+  renderMarkdownWithMath(`**Q${qIdx + 1}.** ${q.question}`, qText);
+  body.appendChild(qText);
+
+  // Options
+  q.options.forEach((opt, optIdx) => {
+    const optDiv = document.createElement("div");
+    optDiv.className = "quiz-card-option";
+    if (state.selected[qIdx] === optIdx) optDiv.classList.add("selected");
+
+    const letter = document.createElement("div");
+    letter.className = "quiz-card-option-letter";
+    letter.textContent = String.fromCharCode(65 + optIdx);
+
+    const optText = document.createElement("div");
+    optText.className = "quiz-card-option-text";
+    renderMarkdownWithMath(opt, optText);
+
+    optDiv.appendChild(letter);
+    optDiv.appendChild(optText);
+    optDiv.addEventListener("click", () => {
+      state.selected[qIdx] = optIdx;
+      renderQuizOverlayContent(card, msg, container, timerInterval);
+    });
+    body.appendChild(optDiv);
+  });
+
+  // Footer navigation
+  const prevBtn = document.createElement("button");
+  prevBtn.className = "quiz-card-nav-btn";
+  prevBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg> Previous`;
+  prevBtn.disabled = qIdx === 0;
+  prevBtn.addEventListener("click", () => {
+    state.currentQuestion = qIdx - 1;
+    renderQuizOverlayContent(card, msg, container, timerInterval);
+  });
+
+  const spacer = document.createElement("div");
+  spacer.style.flex = "1";
+
+  const isLast = qIdx === quiz.questions.length - 1;
+  const nextBtn = document.createElement("button");
+  nextBtn.className = `quiz-card-nav-btn ${isLast ? 'submit' : ''}`;
+
+  if (isLast) {
+    const allAnswered = Object.keys(state.selected).length === quiz.questions.length;
+    nextBtn.textContent = "Submit";
+    nextBtn.disabled = !allAnswered;
+    nextBtn.addEventListener("click", () => {
+      state.submitted = true;
+      if (timerInterval) clearInterval(timerInterval);
+      renderQuizOverlayContent(card, msg, container, timerInterval);
+    });
+  } else {
+    nextBtn.innerHTML = `Next <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+    nextBtn.disabled = state.selected[qIdx] === undefined;
+    nextBtn.addEventListener("click", () => {
+      state.currentQuestion = qIdx + 1;
+      renderQuizOverlayContent(card, msg, container, timerInterval);
+    });
+  }
+
+  footer.appendChild(prevBtn);
+  footer.appendChild(spacer);
+  footer.appendChild(nextBtn);
+}
+
+function renderQuizResults(body, footer, msg, container, card, timerInterval) {
+  const quiz = msg.quiz;
+  const state = msg.quizState;
+  const ms = quiz.markingScheme || { correct: 1, incorrect: 0, unanswered: 0 };
+
+  // Remove progress dots
+  const progressDiv = card.querySelector(".quiz-card-progress");
+  if (progressDiv) progressDiv.remove();
+
+  // Calculate score
+  let score = 0;
+  quiz.questions.forEach((q, i) => {
+    const sel = state.selected[i];
+    if (sel === undefined) {
+      score += ms.unanswered;
+    } else if (sel === q.answerIndex) {
+      score += ms.correct;
+    } else {
+      score += ms.incorrect;
+    }
+  });
+
+  // Score display
+  const scoreDiv = document.createElement("div");
+  scoreDiv.className = "quiz-results-score";
+  scoreDiv.innerHTML = `<div class="quiz-results-score-number">${score} / ${quiz.maxMarks || quiz.questions.length}</div><div class="quiz-results-score-label">Final Score</div>`;
+  body.appendChild(scoreDiv);
+
+  // Each question review
+  quiz.questions.forEach((q, i) => {
+    const qDiv = document.createElement("div");
+    qDiv.className = "quiz-results-question";
+
+    const qText = document.createElement("div");
+    qText.className = "quiz-results-question-text";
+    renderMarkdownWithMath(`**Q${i + 1}.** ${q.question}`, qText);
+    qDiv.appendChild(qText);
+
+    q.options.forEach((opt, optIdx) => {
+      const optDiv = document.createElement("div");
+      optDiv.className = "quiz-results-option";
+      const sel = state.selected[i];
+
+      if (optIdx === q.answerIndex) {
+        optDiv.classList.add("correct");
+        renderMarkdownWithMath(`**&#10003; ${String.fromCharCode(65 + optIdx)}.** ${opt}`, optDiv);
+      } else if (sel === optIdx) {
+        optDiv.classList.add("wrong");
+        renderMarkdownWithMath(`**&#10007; ${String.fromCharCode(65 + optIdx)}.** ${opt}`, optDiv);
+      } else {
+        optDiv.classList.add("neutral");
+        renderMarkdownWithMath(`**${String.fromCharCode(65 + optIdx)}.** ${opt}`, optDiv);
+      }
+      qDiv.appendChild(optDiv);
+    });
+
+    if (q.explanation) {
+      const exp = document.createElement("div");
+      exp.className = "quiz-results-explanation";
+      renderMarkdownWithMath(`**Explanation:**\n\n${q.explanation}`, exp);
+      qDiv.appendChild(exp);
+    }
+
+    body.appendChild(qDiv);
+  });
+
+  // Footer with close only
+  footer.innerHTML = "";
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "quiz-card-nav-btn submit";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => {
+    const overlay = card.closest(".quiz-overlay");
+    if (overlay) overlay.remove();
+  });
+  footer.appendChild(closeBtn);
+}
+
 function renderMessages(container) {
   const list = container.querySelector(".chat-messages");
   if (!list) return;
@@ -267,6 +769,7 @@ function renderMessages(container) {
 
   list.innerHTML = "";
   messages.forEach((msg) => {
+    if (msg.isHidden) return;
     const row = document.createElement("div");
     row.className = "chat-msg " + (msg.role === "user" ? "chat-msg-user" : "chat-msg-ai");
 
@@ -291,12 +794,30 @@ function renderMessages(container) {
       } else {
         bubble.innerHTML = escapeHtml(msg.content);
       }
+    } else if (msg.quiz) {
+      renderQuizCard(bubble, msg, container);
+    } else if (msg.quizFormatWarning) {
+      renderMarkdownWithMath(msg.content, bubble);
+      const warning = document.createElement("div");
+      warning.className = "quiz-format-warning";
+      warning.textContent = "Invalid quiz format — retrying with correct schema...";
+      bubble.appendChild(warning);
     } else {
       renderMarkdownWithMath(msg.content, bubble);
     }
     const bubbleWrapper = document.createElement("div");
     bubbleWrapper.className = "chat-bubble-wrapper";
     bubbleWrapper.appendChild(bubble);
+
+    if (msg.role === "assistant" && msg.metrics) {
+      const metricsEl = document.createElement("div");
+      metricsEl.className = "chat-metrics";
+      metricsEl.textContent = formatChatMetrics(msg.metrics);
+      if (msg.metrics.estimated) {
+        metricsEl.title = "Token counts estimated — provider did not return usage data";
+      }
+      bubbleWrapper.appendChild(metricsEl);
+    }
 
     const actionBar = document.createElement("div");
     actionBar.className = "chat-action-bar";
@@ -433,6 +954,7 @@ async function renderModelSelector(container) {
 function renderInputArea(container) {
   const sendBtn = container.querySelector(".chat-send-btn-icon");
   const input = container.querySelector(".chat-input");
+  const quizBtn = container.querySelector(".chat-quiz-mode-btn");
   if (sendBtn && input) {
     if (isLoading) {
       sendBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"></rect></svg>`;
@@ -446,6 +968,11 @@ function renderInputArea(container) {
       sendBtn.style.opacity = hasContent ? "1" : "0.3";
       sendBtn.style.pointerEvents = hasContent ? "auto" : "none";
     }
+  }
+  if (quizBtn) {
+    quizBtn.disabled = isLoading;
+    quizBtn.style.opacity = isLoading ? "0.6" : "1";
+    quizBtn.style.pointerEvents = isLoading ? "none" : "auto";
   }
   if (input) input.disabled = isLoading;
 }
@@ -554,12 +1081,13 @@ function renderAll(container) {
   renderInputArea(container);
 }
 
-async function sendMessage(container) {
+async function sendMessage(container, overrideText, isSilentRetry = false) {
   if (isLoading) return;
 
   const input = container.querySelector(".chat-input");
-  const text = input.value.trim();
-  if (!text) return;
+  const text = overrideText || (input ? input.value.trim() : "");
+  if (!text && !isSilentRetry) return;
+  const isQuizMode = true;
 
   const selectedModelData = MODELS.find(m => m.id === selectedModel);
   const provider = selectedModelData ? selectedModelData.provider : "mistral";
@@ -571,25 +1099,17 @@ async function sendMessage(container) {
   openRouterApiKey = data.chatSettings?.openRouterApiKey || "";
   geminiApiKey = data.chatSettings?.geminiApiKey || "";
   cerebrasApiKey = data.chatSettings?.cerebrasApiKey || "";
-  const puterApiKey = (data.chatSettings?.puterApiKey || "").replace(/^["']|["']$/g, '');
-
-  if (provider === "puter" && puterApiKey) {
-    if (window.puter && typeof window.puter.setAuthToken === "function") {
-      window.puter.setAuthToken(puterApiKey);
-    }
-  }
 
   let currentKey = mistralApiKey;
-  if (provider === "alibaba") currentKey = alibabaApiKey;
-  if (provider === "groq") currentKey = groqApiKey;
-  if (provider === "openrouter") currentKey = openRouterApiKey;
-  if (provider === "gemini") currentKey = geminiApiKey;
-  if (provider === "cerebras") currentKey = cerebrasApiKey;
+  let endpoint = MISTRAL_API_ENDPOINT;
 
-  if (provider === "puter" && !puterApiKey) {
-    showToast(`Please configure your Puter Auth Token in the Settings tab first.`);
-    return;
-  } else if (provider !== "puter" && !currentKey) {
+  if (provider === "alibaba") { currentKey = alibabaApiKey; endpoint = ALIBABA_API_ENDPOINT; }
+  else if (provider === "groq") { currentKey = groqApiKey; endpoint = GROQ_API_ENDPOINT; }
+  else if (provider === "openrouter") { currentKey = openRouterApiKey; endpoint = OPENROUTER_API_ENDPOINT; }
+  else if (provider === "gemini") { currentKey = geminiApiKey; endpoint = `${GEMINI_API_ENDPOINT}?key=${geminiApiKey}`; }
+  else if (provider === "cerebras") { currentKey = cerebrasApiKey; endpoint = CEREBRAS_API_ENDPOINT; }
+
+  if (!currentKey) {
     let providerName = "Mistral";
     if (provider === "alibaba") providerName = "Alibaba";
     if (provider === "groq") providerName = "Groq";
@@ -614,15 +1134,17 @@ async function sendMessage(container) {
     });
   }
 
-  messages.push({ role: "user", content: msgContent });
+  messages.push({ role: "user", content: msgContent, isHidden: isSilentRetry });
   saveChatHistory();
   pendingImages = [];
   if (typeof container.updatePreview === "function") {
     container.updatePreview();
   }
   
-  input.value = "";
-  input.style.height = "auto";
+  if (input && !isSilentRetry) {
+    input.value = "";
+    input.style.height = "auto";
+  }
   isLoading = true;
   renderAll(container);
 
@@ -675,10 +1197,14 @@ async function sendMessage(container) {
 
   let accumulatedContent = "";
   let bubbleDiv = null;
+  let messagesWithSystem = [];
+  let ttftMs = null;
+  let streamUsage = null;
 
   try {
     currentAbortController = new AbortController();
     let sysPrompt = "You are a helpful JEE exam preparation assistant. Help with Physics, Chemistry, and Mathematics concepts, problem-solving strategies, and study advice. Keep answers concise and educational. ALWAYS wrap inline math equations with \\( and \\) delimiters, and block math equations with $$ and $$ delimiters. Never use plain-text math like 10^-6; always write it as \\(10^{-6}\\).";
+    sysPrompt += "\n\nIf the user explicitly asks for a quiz, test, or assessment, you MUST generate an interactive quiz. You can include conversational text before and after the quiz. The quiz itself MUST be enclosed in a ```json markdown block anywhere in your response. The JSON must match this EXACT minimalist schema: {\"topic\":\"<short topic name>\",\"questions\":[{\"q\":\"...\",\"o\":[\"...\",\"...\",\"...\",\"...\"],\"a\":0,\"e\":\"...\",\"d\":\"easy|medium|hard\"}]}. Use 'q' for question, 'o' for options array, 'a' for correct answer index (0-based), 'e' for explanation, and 'd' for difficulty. You may optionally add top-level keys to the JSON: \"timed\": true, \"timeLimitMinutes\": <number>, \"maxMarks\": <number>, and \"markingScheme\": {\"correct\": <number>, \"incorrect\": <number>, \"unanswered\": 0} to deeply customize the quiz mechanics. CRITICAL: Escape all newlines (use \\n) inside JSON string values. Do not output literal raw newlines inside strings. Do NOT output a json block unless you intend to render an interactive quiz.";
     
     // Attach Context Payload
     if (typeof container.getAttachedContexts === "function") {
@@ -729,53 +1255,37 @@ async function sendMessage(container) {
       }
     }
 
-    let endpoint = MISTRAL_API_ENDPOINT;
-    if (provider === "alibaba") endpoint = ALIBABA_API_ENDPOINT;
-    if (provider === "groq") endpoint = GROQ_API_ENDPOINT;
-    if (provider === "openrouter") endpoint = OPENROUTER_API_ENDPOINT;
-    if (provider === "gemini") endpoint = GEMINI_API_ENDPOINT;
-    if (provider === "cerebras") endpoint = CEREBRAS_API_ENDPOINT;
+    const sanitizedMessages = messages.map(m => ({
+      role: m.role,
+      content: m.content
+    }));
 
-    const messagesWithSystem = [
+    messagesWithSystem = [
       { role: "system", content: sysPrompt },
-      ...messages
+      ...sanitizedMessages
     ];
 
-    if (provider === "puter") {
-      const response = await window.puter.ai.chat(messagesWithSystem, {
-        model: selectedModel,
-        stream: true,
-        max_tokens: 8192
-      });
+    const requestBody = {
+      model: selectedModel,
+      messages: messagesWithSystem,
+      temperature: 0.7,
+      top_p: 1,
+      stream: true
+    };
 
-      let isFirstChunk = true;
-      for await (const part of response) {
-        if (currentAbortController.signal.aborted) break;
-        if (part && part.text) {
-          if (isFirstChunk) {
-            if (typing) {
-              if (typing._intervalId) clearTimeout(typing._intervalId);
-              typing.innerHTML = '<div class="chat-bubble markdown-body"></div>';
-              bubbleDiv = typing.querySelector(".chat-bubble");
-            }
-            isFirstChunk = false;
-          }
-          accumulatedContent += part.text;
-          renderMarkdownWithMath(accumulatedContent, bubbleDiv);
-          if (list.scrollHeight - list.scrollTop < list.clientHeight + 100) {
-            list.scrollTop = list.scrollHeight;
-          }
-        }
-      }
-    } else {
-      const body = JSON.stringify({
-        model: selectedModel,
-        messages: messagesWithSystem,
-        temperature: 0.7,
-        max_tokens: 8192,
-        top_p: 1,
-        stream: true
-      });
+    if (!["groq", "cerebras"].includes(provider)) {
+      requestBody.max_tokens = 8192;
+    }
+
+    if (["openai", "openrouter", "mistral"].includes(provider)) {
+      requestBody.stream_options = { include_usage: true };
+    }
+
+    const body = JSON.stringify(requestBody);
+
+      const requestStartTime = performance.now();
+      ttftMs = null;
+      streamUsage = null;
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -827,16 +1337,77 @@ async function sendMessage(container) {
 
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.usage) {
+                streamUsage = parsed.usage;
+              }
               const delta = parsed.choices?.[0]?.delta?.content || "";
               if (delta) {
                 if (isFirstChunk) {
+                  ttftMs = Math.round(performance.now() - requestStartTime);
                   if (typing._intervalId) clearTimeout(typing._intervalId);
                   typing.innerHTML = '<div class="chat-bubble markdown-body"></div>';
                   bubbleDiv = typing.querySelector(".chat-bubble");
                   isFirstChunk = false;
                 }
                 accumulatedContent += delta;
-                renderMarkdownWithMath(accumulatedContent, bubbleDiv);
+                
+                if (isQuizMode) {
+                  const tempQuiz = extractQuizFromResponse(accumulatedContent);
+                  if (tempQuiz) {
+                    renderQuizCard(bubbleDiv, { content: accumulatedContent, quiz: tempQuiz }, container);
+                  } else {
+                    const startMatch = accumulatedContent.match(/```(?:json)?\s*([\s\S]*)/i);
+                    const firstBrace = accumulatedContent.indexOf('{');
+                    
+                    let preText = accumulatedContent;
+                    let showLoader = false;
+                    
+                    if (startMatch) {
+                      const idx = accumulatedContent.indexOf(startMatch[0]);
+                      preText = accumulatedContent.substring(0, idx);
+                      showLoader = true;
+                    } else if (firstBrace !== -1) {
+                      preText = accumulatedContent.substring(0, firstBrace);
+                      showLoader = true;
+                    }
+
+                    let preDiv = bubbleDiv.querySelector('.quiz-pre-text');
+                    if (!preDiv && preText.trim()) {
+                      preDiv = document.createElement("div");
+                      preDiv.className = "quiz-pre-text";
+                      bubbleDiv.insertBefore(preDiv, bubbleDiv.firstChild);
+                    }
+                    if (preDiv) {
+                      renderMarkdownWithMath(preText.trim(), preDiv);
+                    }
+                    
+                    if (showLoader) {
+                      let loader = bubbleDiv.querySelector(".chat-quiz-loader");
+                      if (!loader) {
+                        loader = document.createElement("div");
+                        loader.className = "chat-quiz-loader";
+                        loader.style.margin = "12px 0";
+                        loader.style.padding = "12px 16px";
+                        loader.style.background = "var(--bg-secondary)";
+                        loader.style.border = "1px solid var(--border-color)";
+                        loader.style.borderRadius = "10px";
+                        loader.style.display = "flex";
+                        loader.style.alignItems = "center";
+                        loader.style.gap = "8px";
+                        loader.innerHTML = `
+                          <div class="chat-typing-spinner" style="margin: 0;"></div>
+                          <div class="chat-quiz-loader-text" style="font-weight:600; font-size:0.9rem;">Extracting quiz...</div>
+                        `;
+                        bubbleDiv.appendChild(loader);
+                      }
+                    } else {
+                      const loader = bubbleDiv.querySelector(".chat-quiz-loader");
+                      if (loader) loader.remove();
+                    }
+                  }
+                } else {
+                  renderMarkdownWithMath(accumulatedContent, bubbleDiv);
+                }
                 
                 if (list.scrollHeight - list.scrollTop < list.clientHeight + 100) {
                   list.scrollTop = list.scrollHeight;
@@ -848,10 +1419,68 @@ async function sendMessage(container) {
           }
         }
       }
-    }
 
-    // Replace the hidden message history entry with the final accumulated string
-    messages.push({ role: "assistant", content: accumulatedContent });
+    const metrics = buildResponseMetrics({
+      usage: streamUsage,
+      messagesWithSystem,
+      completionText: accumulatedContent,
+      ttftMs
+    });
+
+    const quiz = extractQuizFromResponse(accumulatedContent);
+    const attemptedQuiz = accumulatedContent.includes("```json") || accumulatedContent.includes('{"topic"');
+
+    // If the model attempted to generate a quiz but format was violated, show warning and retry
+    if (attemptedQuiz && !quiz) {
+      const retryCount = container._quizRetryCount || 0;
+      if (retryCount >= 2) {
+        // Give up after 2 retries
+        container._quizRetryCount = 0;
+        messages.push({
+          role: "assistant",
+          content: accumulatedContent,
+          quizFormatWarning: true,
+          ...(metrics ? { metrics } : {})
+        });
+        saveChatHistory();
+        if (typing._intervalId) clearTimeout(typing._intervalId);
+        typing.remove();
+        isLoading = false;
+        currentAbortController = null;
+        renderAll(container);
+        showToast("Quiz generation failed after multiple attempts. Please try again.");
+        return;
+      }
+      // Push the failed response silently so the AI has context
+      messages.push({
+        role: "assistant",
+        content: accumulatedContent,
+        isHidden: true,
+        ...(metrics ? { metrics } : {})
+      });
+      saveChatHistory();
+      if (typing._intervalId) clearTimeout(typing._intervalId);
+      typing.remove();
+      isLoading = false;
+      currentAbortController = null;
+      
+      showToast("Quiz generation formatting failed. Retrying automatically...");
+
+      // Auto-retry silently
+      container._quizRetryCount = retryCount + 1;
+      const retryText = "The previous response had an invalid quiz JSON. Please include the quiz enclosed in a ```json markdown block, matching this EXACT schema: {\"topic\":\"...\",\"questions\":[{\"q\":\"...\",\"o\":[\"...\"],\"a\":0,\"e\":\"...\"}]}. CRITICAL: You must escape all newlines inside string values as \\n. Do not output raw newlines.";
+      setTimeout(() => sendMessage(container, retryText, true), 500);
+      return;
+    }
+    // Reset retry counter on success
+    container._quizRetryCount = 0;
+
+    messages.push({
+      role: "assistant",
+      content: accumulatedContent,
+      ...(quiz ? { quiz } : {}),
+      ...(metrics ? { metrics } : {})
+    });
     saveChatHistory();
     if (typing._intervalId) clearTimeout(typing._intervalId);
     typing.remove();
@@ -866,7 +1495,19 @@ async function sendMessage(container) {
   } catch (err) {
     if (err.name === 'AbortError') {
       if (accumulatedContent.trim()) {
-        messages.push({ role: "assistant", content: accumulatedContent });
+        const metrics = buildResponseMetrics({
+          usage: streamUsage,
+          messagesWithSystem,
+          completionText: accumulatedContent,
+          ttftMs
+        });
+        const quiz = isQuizMode ? extractQuizFromResponse(accumulatedContent) : null;
+        messages.push({
+          role: "assistant",
+          content: accumulatedContent,
+          ...(quiz ? { quiz } : {}),
+          ...(metrics ? { metrics } : {})
+        });
       } else {
         messages.pop(); // Remove user message if we aborted immediately
       }
@@ -986,18 +1627,14 @@ export async function initChat(container) {
         messages: settings.chatHistory,
         updatedAt: Date.now()
       });
-      currentSessionId = sessionId;
-      messages = settings.chatHistory;
     }
     delete settings.chatHistory;
     await setStorage({ chatSettings: settings });
-  } else if (chatSessions.length > 0) {
-    currentSessionId = chatSessions[0].id;
-    messages = [...chatSessions[0].messages];
-  } else {
-    currentSessionId = null;
-    messages = [];
   }
+
+  // Always start with a fresh, blank session
+  currentSessionId = null;
+  messages = [];
 
   let isSidebarCollapsed = settings.isSidebarCollapsed || false;
 
@@ -1052,7 +1689,14 @@ export async function initChat(container) {
 
   const incognitoBtn = document.createElement("button");
   incognitoBtn.className = "btn btn-ghost incognito-toggle-btn";
-  incognitoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+  getIconSvg("incognito").then(svg => {
+    incognitoBtn.innerHTML = svg;
+    const svgEl = incognitoBtn.querySelector("svg");
+    if (svgEl) {
+      svgEl.setAttribute("width", "18");
+      svgEl.setAttribute("height", "18");
+    }
+  });
   incognitoBtn.title = "Incognito Mode";
   incognitoBtn.onclick = () => {
     isIncognito = !isIncognito;

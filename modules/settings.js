@@ -1,5 +1,6 @@
 import { getStorage, setStorage } from "./storage.js";
 import { MODELS } from "./chat.js";
+import { createScrollTimePicker } from "./ui.js";
 
 function showToast(message, undoCallback) {
   document.dispatchEvent(new CustomEvent("show-toast", {
@@ -10,6 +11,10 @@ function showToast(message, undoCallback) {
 function getTodayString() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function generateReminderId() {
+  return "cls_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
 async function getStorageUsage() {
@@ -33,45 +38,7 @@ export async function initSettings(container) {
   title.textContent = "Settings";
   wrapper.appendChild(title);
 
-  const themeSection = document.createElement("div");
-  themeSection.className = "settings-section";
 
-  const themeRow = document.createElement("div");
-  themeRow.className = "setting-row";
-
-  const themeLabel = document.createElement("span");
-  themeLabel.className = "settings-label";
-  themeLabel.textContent = settings.theme === "dark" ? "Dark Mode" : "Light Mode";
-  themeRow.appendChild(themeLabel);
-
-  const toggleSwitch = document.createElement("div");
-  toggleSwitch.className = "toggle-switch" + (settings.theme === "dark" ? " active" : "");
-
-  const toggleKnob = document.createElement("div");
-  toggleKnob.className = "toggle-knob";
-  toggleSwitch.appendChild(toggleKnob);
-
-  toggleSwitch.addEventListener("click", async () => {
-    const isDark = toggleSwitch.classList.contains("active");
-    if (isDark) {
-      toggleSwitch.classList.remove("active");
-      document.body.classList.remove("dark-theme");
-      document.body.classList.add("light-theme");
-      themeLabel.textContent = "Light Mode";
-      settings.theme = "light";
-    } else {
-      toggleSwitch.classList.add("active");
-      document.body.classList.remove("light-theme");
-      document.body.classList.add("dark-theme");
-      themeLabel.textContent = "Dark Mode";
-      settings.theme = "dark";
-    }
-    await setStorage({ settings });
-  });
-
-  themeRow.appendChild(toggleSwitch);
-  themeSection.appendChild(themeRow);
-  wrapper.appendChild(themeSection);
 
   const apiSection = document.createElement("div");
   apiSection.className = "settings-section";
@@ -142,8 +109,6 @@ export async function initSettings(container) {
   const openRouter = createApiKeyInput("OpenRouter", "Enter OpenRouter API Key...", "openRouterApiKey");
   const gemini = createApiKeyInput("Google AI Studio (Gemini)", "Enter Google AI Studio (Gemini) API Key...", "geminiApiKey");
   const cerebras = createApiKeyInput("Cerebras", "Enter Cerebras API Key...", "cerebrasApiKey");
-  const puter = createApiKeyInput("Puter Auth Token", "Enter Puter Auth Token...", "puterApiKey");
-  puter.wrapper.style.marginBottom = "0";
 
   const mistralInput = mistral.input;
   const alibabaInput = alibaba.input;
@@ -151,13 +116,6 @@ export async function initSettings(container) {
   const openRouterInput = openRouter.input;
   const geminiInput = gemini.input;
   const cerebrasInput = cerebras.input;
-  const puterInput = puter.input;
-
-  const puterHelp = document.createElement("p");
-  puterHelp.style.fontSize = "12px";
-  puterHelp.style.color = "var(--text-secondary)";
-  puterHelp.style.margin = "4px 0 12px 0";
-  puterHelp.innerHTML = `To use Puter models, log into <a href="https://puter.com" target="_blank" style="color:var(--accent-primary);">Puter.com</a>, open Developer Tools (F12) -> Application -> Local Storage -> <b>authToken</b> and paste it here.`;
 
   const saveKeysBtn = document.createElement("button");
   saveKeysBtn.className = "btn btn-primary";
@@ -170,7 +128,6 @@ export async function initSettings(container) {
     chatSettings.openRouterApiKey = openRouterInput.value.trim();
     chatSettings.geminiApiKey = geminiInput.value.trim();
     chatSettings.cerebrasApiKey = cerebrasInput.value.trim();
-    chatSettings.puterApiKey = puterInput.value.trim().replace(/^["']|["']$/g, '');
     await setStorage({ chatSettings });
     showToast("API Keys saved successfully!");
   });
@@ -181,8 +138,6 @@ export async function initSettings(container) {
   apiSection.appendChild(openRouter.wrapper);
   apiSection.appendChild(gemini.wrapper);
   apiSection.appendChild(cerebras.wrapper);
-  apiSection.appendChild(puter.wrapper);
-  apiSection.appendChild(puterHelp);
   apiSection.appendChild(saveKeysBtn);
   wrapper.appendChild(apiSection);
 
@@ -333,6 +288,182 @@ export async function initSettings(container) {
   modelVisSection.appendChild(saveVisBtn);
   wrapper.appendChild(modelVisSection);
 
+  const classReminderSection = document.createElement("div");
+  classReminderSection.className = "settings-section";
+
+  const classReminderTitle = document.createElement("h3");
+  classReminderTitle.textContent = "Class Reminders";
+  classReminderSection.appendChild(classReminderTitle);
+
+  const classReminderDesc = document.createElement("p");
+  classReminderDesc.textContent = "Set your daily classes. You will get two notifications for each class: 10 minutes before and at start time.";
+  classReminderDesc.style.fontSize = "12px";
+  classReminderDesc.style.color = "var(--text-secondary)";
+  classReminderDesc.style.marginBottom = "12px";
+  classReminderSection.appendChild(classReminderDesc);
+
+  const reminderData = await getStorage(["settings"]);
+  const reminderSettings = reminderData.settings || {};
+  let classSchedules = Array.isArray(reminderSettings.classSchedules) ? [...reminderSettings.classSchedules] : [];
+
+  const classInputRow = document.createElement("div");
+  classInputRow.className = "input-row";
+  classInputRow.style.display = "grid";
+  classInputRow.style.gridTemplateColumns = "minmax(140px, 1fr) minmax(120px, auto) auto";
+  classInputRow.style.gap = "8px";
+  classInputRow.style.marginBottom = "12px";
+
+  const classNameInput = document.createElement("input");
+  classNameInput.type = "text";
+  classNameInput.className = "input-field";
+  classNameInput.placeholder = "Class name (e.g. Physics)";
+
+  const classTimePicker = createScrollTimePicker("");
+
+  const addClassBtn = document.createElement("button");
+  addClassBtn.className = "btn btn-secondary";
+  addClassBtn.textContent = "Add Class";
+
+  classInputRow.appendChild(classNameInput);
+  classInputRow.appendChild(classTimePicker);
+  classInputRow.appendChild(addClassBtn);
+  classReminderSection.appendChild(classInputRow);
+
+  const classList = document.createElement("div");
+  classList.style.display = "flex";
+  classList.style.flexDirection = "column";
+  classList.style.gap = "8px";
+  classList.style.marginBottom = "12px";
+  classReminderSection.appendChild(classList);
+
+  function renderClassRows() {
+    classList.innerHTML = "";
+    if (classSchedules.length === 0) {
+      const empty = document.createElement("div");
+      empty.style.fontSize = "13px";
+      empty.style.color = "var(--text-secondary)";
+      empty.textContent = "No class reminders added yet.";
+      classList.appendChild(empty);
+      return;
+    }
+
+    classSchedules
+      .sort((a, b) => (a.time || "").localeCompare(b.time || ""))
+      .forEach((schedule) => {
+        const row = document.createElement("div");
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = "1fr auto auto";
+        row.style.gap = "8px";
+        row.style.alignItems = "center";
+        row.style.padding = "8px 10px";
+        row.style.background = "var(--bg-secondary)";
+        row.style.border = "1px solid var(--border-color)";
+        row.style.borderRadius = "8px";
+
+        const label = document.createElement("div");
+        label.textContent = `${schedule.name} • ${schedule.time}`;
+        label.style.fontSize = "13px";
+        label.style.color = "var(--text-primary)";
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "btn";
+        editBtn.style.padding = "6px 10px";
+        editBtn.textContent = "Edit";
+        editBtn.addEventListener("click", () => {
+          classNameInput.value = schedule.name || "";
+          classTimePicker.value = schedule.time || "";
+          classSchedules = classSchedules.filter((item) => item.id !== schedule.id);
+          renderClassRows();
+        });
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "btn btn-danger";
+        deleteBtn.style.padding = "6px 10px";
+        deleteBtn.textContent = "Delete";
+        deleteBtn.addEventListener("click", () => {
+          classSchedules = classSchedules.filter((item) => item.id !== schedule.id);
+          renderClassRows();
+        });
+
+        row.appendChild(label);
+        row.appendChild(editBtn);
+        row.appendChild(deleteBtn);
+        classList.appendChild(row);
+      });
+  }
+
+  addClassBtn.addEventListener("click", () => {
+    const name = classNameInput.value.trim();
+    const time = classTimePicker.value;
+
+    if (!name) {
+      showToast("Please enter a class name.");
+      return;
+    }
+
+    classSchedules.push({
+      id: generateReminderId(),
+      name,
+      time
+    });
+    classNameInput.value = "";
+    classTimePicker.value = "09:00";
+    renderClassRows();
+  });
+
+  const saveClassBtn = document.createElement("button");
+  saveClassBtn.className = "btn btn-primary";
+  saveClassBtn.style.width = "100%";
+  saveClassBtn.style.transition = "transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)";
+  saveClassBtn.textContent = "Save Class Reminders";
+  saveClassBtn.addEventListener("click", async () => {
+    saveClassBtn.style.transform = "scale(0.95)";
+    setTimeout(() => saveClassBtn.style.transform = "scale(1)", 150);
+
+    const data = await getStorage(["settings"]);
+    const nextSettings = data.settings || {};
+    nextSettings.classSchedules = classSchedules;
+    await setStorage({ settings: nextSettings });
+
+    showToast("Class reminders saved!");
+
+    try {
+      chrome.runtime.sendMessage({
+        action: "syncClassReminders",
+        schedules: classSchedules
+      }).catch(() => {});
+    } catch (e) {
+      // Background may be unavailable during extension reload.
+    }
+  });
+
+  classReminderSection.appendChild(saveClassBtn);
+
+  const testNotifBtn = document.createElement("button");
+  testNotifBtn.className = "btn btn-secondary";
+  testNotifBtn.style.width = "100%";
+  testNotifBtn.style.marginTop = "8px";
+  testNotifBtn.textContent = "🔔 Test Notification";
+  testNotifBtn.addEventListener("click", () => {
+    try {
+      chrome.runtime.sendMessage({ action: "testNotification" }, (response) => {
+        if (chrome.runtime.lastError) {
+          showToast("Error: " + chrome.runtime.lastError.message);
+        } else if (response && response.status === "error") {
+          showToast("API Error: " + response.message);
+        } else {
+          showToast("Test notification sent!");
+        }
+      });
+    } catch (e) {
+      showToast("Background script unavailable.");
+    }
+  });
+  classReminderSection.appendChild(testNotifBtn);
+
+  wrapper.appendChild(classReminderSection);
+  renderClassRows();
+
   const exportSection = document.createElement("div");
   exportSection.className = "settings-section";
 
@@ -424,7 +555,7 @@ export async function initSettings(container) {
 
   const versionEl = document.createElement("p");
   versionEl.className = "about-text";
-  versionEl.textContent = "JEE Study Dashboard v1.0.0";
+  versionEl.textContent = "JEE Study Dashboard v0.1.1";
   aboutSection.appendChild(versionEl);
 
   const usageEl = document.createElement("p");
@@ -438,7 +569,7 @@ export async function initSettings(container) {
   try {
     const bytes = await getStorageUsage();
     const kb = (bytes / 1024).toFixed(1);
-    usageEl.textContent = `Storage used: ${kb} KB of 10 MB`;
+    usageEl.textContent = `Storage used: ${kb} KB`;
   } catch (e) {
     usageEl.textContent = "Storage used: Unable to calculate";
   }
