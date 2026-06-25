@@ -301,7 +301,7 @@ export function createQuantityOptionsRow(idPrefix) {
   return { row: optionsRow, checkbox: trackCheckbox, input: targetInput };
 }
 
-export function createQuantityPillUI(item, onDecrement, onIncrement, isSmall = false) {
+export function createQuantityPillUI(item, onDecrement, onIncrement, isSmall = false, hideButtons = false) {
   const qtyContainer = document.createElement("div");
   qtyContainer.className = "qty-container";
   qtyContainer.style.display = "flex";
@@ -310,27 +310,42 @@ export function createQuantityPillUI(item, onDecrement, onIncrement, isSmall = f
   qtyContainer.style.marginLeft = "auto";
   qtyContainer.style.marginRight = isSmall ? "16px" : "20px";
 
-  const btnPadding = isSmall ? "0px 4px" : "2px 6px";
+  const btnSize = isSmall ? "16px" : "20px";
+  const fontSize = isSmall ? "12px" : "14px";
 
   const decBtn = document.createElement("button");
   decBtn.className = "qty-btn";
   decBtn.textContent = "-";
-  decBtn.style.padding = btnPadding;
-  decBtn.style.background = "var(--bg-tertiary)";
+  decBtn.style.width = btnSize;
+  decBtn.style.height = btnSize;
+  decBtn.style.background = "white";
   decBtn.style.border = "none";
-  decBtn.style.borderRadius = "4px";
-  decBtn.style.color = "var(--text-primary)";
+  decBtn.style.borderRadius = "50%";
+  decBtn.style.color = "black";
   decBtn.style.cursor = "pointer";
+  decBtn.style.display = "flex";
+  decBtn.style.alignItems = "center";
+  decBtn.style.justifyContent = "center";
+  decBtn.style.fontWeight = "bold";
+  decBtn.style.fontSize = fontSize;
+  decBtn.style.lineHeight = "1";
 
   const incBtn = document.createElement("button");
   incBtn.className = "qty-btn";
   incBtn.textContent = "+";
-  incBtn.style.padding = btnPadding;
-  incBtn.style.background = "var(--bg-tertiary)";
+  incBtn.style.width = btnSize;
+  incBtn.style.height = btnSize;
+  incBtn.style.background = "white";
   incBtn.style.border = "none";
-  incBtn.style.borderRadius = "4px";
-  incBtn.style.color = "var(--text-primary)";
+  incBtn.style.borderRadius = "50%";
+  incBtn.style.color = "black";
   incBtn.style.cursor = "pointer";
+  incBtn.style.display = "flex";
+  incBtn.style.alignItems = "center";
+  incBtn.style.justifyContent = "center";
+  incBtn.style.fontWeight = "bold";
+  incBtn.style.fontSize = fontSize;
+  incBtn.style.lineHeight = "1";
 
   const pill = document.createElement("span");
   pill.className = "qty-pill";
@@ -344,9 +359,9 @@ export function createQuantityPillUI(item, onDecrement, onIncrement, isSmall = f
   decBtn.onclick = onDecrement;
   incBtn.onclick = onIncrement;
 
-  qtyContainer.appendChild(decBtn);
+  if (!hideButtons) qtyContainer.appendChild(decBtn);
   qtyContainer.appendChild(pill);
-  qtyContainer.appendChild(incBtn);
+  if (!hideButtons) qtyContainer.appendChild(incBtn);
 
   return qtyContainer;
 }

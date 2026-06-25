@@ -63,9 +63,12 @@ A critical tool for boosting your percentile. It allows you to log what went wro
 - **Analytics**: Beautiful Canvas-based charts showing 7-day activity for Questions, Mistakes, Backlog Completion, and Study Sessions.
 
 ### AI Chat
-Your personal JEE tutor. Connects to 52 different AI models.
-- **@Mention Context**: Type `@` in the chat to instantly inject your notes, pending backlogs, recent mistakes, or questions into the chat context.
-- **Advanced Rendering**: Renders full LaTeX math equations, Markdown tables, and `<think>` reasoning chains perfectly.
+Your personal JEE tutor. Connects to exactly 106 different AI models natively.
+- **Client-Side Image Optimization**: Before any image leaves your browser, it is intelligently resized using an HTML5 Canvas API down to optimal token-saving dimensions (≤ 500px or capped at 650px).
+- **Advanced Context Guard**: A hard 5000-token dynamic limiter keeps API costs down, automatically purging old text but intelligently protecting your image attachments from being deleted.
+- **Native Drag-and-Drop Vision**: Drag an image into Chat, Questions, or Mistakes and enjoy a beautiful blur overlay 'Drop image here' before dropping.
+- **@Mention Context**: Type `@` in the chat to instantly inject your notes, pending backlogs, recent mistakes, or questions (including their images) into the chat context.
+- **API Keys**: Supports custom keys with easy Copy/Unlink buttons directly in Settings.
 - **Incognito Mode**: Talk to the AI without saving the conversation to history.
 
 ---

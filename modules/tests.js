@@ -83,6 +83,15 @@ export async function initTests(container) {
   listEl.style.gap = "12px";
   wrapper.appendChild(listEl);
 
+    wrapper.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof addBtn !== 'undefined' && addBtn) {
+        addBtn.click();
+      }
+    }
+  });
   container.appendChild(wrapper);
 
   async function renderList() {
@@ -191,3 +200,4 @@ export async function initTests(container) {
 
   renderList();
 }
+

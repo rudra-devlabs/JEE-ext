@@ -265,6 +265,11 @@ export async function initQuestions(container) {
   const wrapper = document.createElement("div");
   wrapper.className = "questions-wrapper";
 
+  const dndOverlay = document.createElement("div");
+  dndOverlay.className = "dnd-overlay";
+  dndOverlay.innerHTML = "Drop image here";
+  wrapper.appendChild(dndOverlay);
+
   const title = document.createElement("h2");
   title.textContent = "Questions Log";
   wrapper.appendChild(title);
@@ -422,17 +427,13 @@ export async function initQuestions(container) {
   updateDatalist(container);
   renderList(container);
 
-  function handleSubmit(e) {
-    if (e.key === "Enter" && e.ctrlKey) {
+  wrapper.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
+      e.stopPropagation();
       addQuestion(container);
     }
-  }
-
-  qInput.addEventListener("keydown", handleSubmit);
-  chapInput.addEventListener("keydown", handleSubmit);
-  lecInput.addEventListener("keydown", handleSubmit);
-  tagsInput.addEventListener("keydown", handleSubmit);
+  });
 
   searchInput.addEventListener("input", () => {
     searchQuery = searchInput.value.trim();

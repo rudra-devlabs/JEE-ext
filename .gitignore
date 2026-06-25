@@ -21,3 +21,8 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Scratch / Temp files
+scratch/
+.gemini/
+*.log

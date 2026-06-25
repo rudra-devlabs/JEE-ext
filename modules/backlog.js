@@ -139,7 +139,7 @@ function renderList(container) {
 async function addItem(container) {
   const input = container.querySelector(".backlog-input");
   const trackCb = container.querySelector("#backlog-track-qty");
-  const targetIn = container.querySelector(".backlog-target-input");
+  const targetIn = container.querySelector("#backlog-target");
 
   const text = input.value.trim();
   if (!text) {
@@ -292,6 +292,15 @@ export async function initBacklog(container) {
   listEl.className = "card-list";
   wrapper.appendChild(listEl);
 
+    wrapper.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof addBtn !== 'undefined' && addBtn) {
+        addBtn.click();
+      }
+    }
+  });
   container.appendChild(wrapper);
 
   renderList(container);
@@ -310,3 +319,4 @@ export async function initBacklog(container) {
     renderList(container);
   });
 }
+

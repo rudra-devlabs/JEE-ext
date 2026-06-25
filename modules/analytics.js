@@ -4,14 +4,14 @@ let currentHeatmapDate = new Date();
 currentHeatmapDate.setDate(1);
 
 function getThemeColors() {
-  const style = getComputedStyle(document.documentElement);
+  const style = getComputedStyle(document.body);
   return {
     accent: style.getPropertyValue("--accent").trim() || "#7c5cfc",
     textPrimary: style.getPropertyValue("--text-primary").trim() || "#e0e0e0",
     textSecondary: style.getPropertyValue("--text-secondary").trim() || "#a0a0b0",
     bgPrimary: style.getPropertyValue("--bg-primary").trim() || "#2a2a3d",
     bgSecondary: style.getPropertyValue("--bg-secondary").trim() || "#1e1e2e",
-    gridLine: style.getPropertyValue("--bg-primary").trim() || "#2a2a3d"
+    gridLine: style.getPropertyValue("--border-color").trim() || "#333333"
   };
 }
 
@@ -144,7 +144,7 @@ function drawDonutChart(canvas, done, pending, title, colors) {
 
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-  ctx.strokeStyle = colors.bgPrimary;
+  ctx.strokeStyle = colors.gridLine;
   ctx.lineWidth = lineWidth;
   ctx.stroke();
 
@@ -361,15 +361,15 @@ async function drawTodoHeatmap(container) {
     if (dayData && dayData.total > 0) {
       const pct = dayData.completed / dayData.total;
       if (pct === 1) {
-        cell.style.backgroundColor = "#ffffff";
-        cell.style.color = "#000000";
+        cell.style.backgroundColor = colors.textPrimary;
+        cell.style.color = colors.bgPrimary;
       } else if (pct >= 0.5) {
-        cell.style.backgroundColor = "#555555";
-        cell.style.color = "#ffffff";
+        cell.style.backgroundColor = colors.textSecondary;
+        cell.style.color = colors.bgPrimary;
       } else {
-        cell.style.backgroundColor = "#000000";
-        cell.style.border = "1px solid #ffffff";
-        cell.style.color = "#ffffff";
+        cell.style.backgroundColor = colors.bgSecondary;
+        cell.style.border = `1px solid ${colors.textPrimary}`;
+        cell.style.color = colors.textPrimary;
         cell.style.boxSizing = "border-box";
       }
       cell.title = `${dayData.completed} / ${dayData.total} tasks completed`;

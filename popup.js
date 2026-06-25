@@ -463,6 +463,43 @@ if (qScreenshotBtn) {
   });
 }
 
+function setupDragAndDrop(panel, targetArray, renderFunc) {
+  if (!panel) return;
+  panel.style.position = "relative";
+  const dndOverlay = document.createElement("div");
+  dndOverlay.className = "dnd-overlay";
+  dndOverlay.innerHTML = "Drop image here";
+  panel.appendChild(dndOverlay);
+
+  panel.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    panel.classList.add("drag-over");
+  });
+
+  panel.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    panel.classList.remove("drag-over");
+  });
+
+  panel.addEventListener("drop", (e) => {
+    e.preventDefault();
+    panel.classList.remove("drag-over");
+    if (e.dataTransfer && e.dataTransfer.files) {
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        const file = e.dataTransfer.files[i];
+        if (file && file.type.startsWith("image/")) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            targetArray.push(ev.target.result);
+            renderFunc();
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  });
+}
+
 const panelQuestions = document.getElementById("panel-questions");
 if (panelQuestions) {
   panelQuestions.addEventListener("paste", (e) => {
@@ -1270,3 +1307,6 @@ if (document.readyState === "loading") {
 } else {
   initPopup();
 }
+
+setupDragAndDrop(panelQuestions, currentQImages, renderQImages);
+setupDragAndDrop(document.getElementById("panel-mistakes"), mImages, renderMImages);

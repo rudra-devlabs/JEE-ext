@@ -449,9 +449,10 @@ export async function initMistakes(container) {
   updateDatalist(container);
   renderList(container);
 
-  textArea.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.ctrlKey) {
+  wrapper.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
+      e.stopPropagation();
       addMistake(container, mImages);
       mImages = [];
       renderMImages();

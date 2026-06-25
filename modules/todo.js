@@ -50,8 +50,36 @@ function showToast(message) {
 }
 
 export async function initTodo(container) {
-  const data = await getStorage(["todos"]);
+  const data = await getStorage(["todos", "settings", "lastRecurringSyncDate"]);
   let todos = data.todos || [];
+  const settings = data.settings || {};
+  const lastRecurringSyncDate = data.lastRecurringSyncDate || "";
+
+  let needsSave = false;
+  const todayStr = getTodayString();
+
+  if (lastRecurringSyncDate !== todayStr && settings.recurringTodos && settings.recurringTodos.length > 0) {
+    settings.recurringTodos.forEach(rt => {
+      const alreadyExists = todos.find(t => t.text === rt.text && t.date === todayStr && t.isRecurring);
+      if (!alreadyExists) {
+        const newTask = {
+          id: generateId(),
+          text: rt.text,
+          done: false,
+          date: todayStr,
+          isRecurring: true
+        };
+        if (rt.hasQuantity) {
+          newTask.hasQuantity = true;
+          newTask.targetQuantity = rt.targetQuantity;
+          newTask.completedQuantity = 0;
+        }
+        todos.push(newTask);
+        needsSave = true;
+      }
+    });
+    await setStorage({ lastRecurringSyncDate: todayStr });
+  }
 
   // Cleanup old tasks before current week's Monday
   const monday = getMondayOfCurrentWeek();
@@ -63,7 +91,7 @@ export async function initTodo(container) {
     return taskDate.getTime() >= monday.getTime();
   });
 
-  if (todos.length !== originalLength) {
+  if (todos.length !== originalLength || needsSave) {
     await setStorage({ todos }); await syncTodoHistory(todos);
   }
 
@@ -203,6 +231,10 @@ export async function initTodo(container) {
         tasks.forEach(task => {
           const li = document.createElement("li");
           li.className = "todo-item" + (task.done ? " done" : "");
+          if (task.justChecked) {
+            li.classList.add("animate-strike");
+            task.justChecked = false;
+          }
           if (!isToday && !task.done) li.classList.add("expired");
 
           const checkbox = document.createElement("input");
@@ -240,6 +272,7 @@ export async function initTodo(container) {
                 task.completedQuantity++;
                 if (task.completedQuantity === task.targetQuantity) {
                   task.done = true;
+                  task.justChecked = true;
                   checkbox.checked = true;
                   showToast("Sub-tasks completed!");
                 }
@@ -247,7 +280,7 @@ export async function initTodo(container) {
                 renderTodos();
               }
             };
-            const qtyContainer = createQuantityPillUI(task, decFn, incFn, false);
+            const qtyContainer = createQuantityPillUI(task, decFn, incFn, false, !isToday);
             qtyContainer.style.marginRight = "0"; // avoid extra margin pushing delete btn away
             rightActions.appendChild(qtyContainer);
           }
@@ -265,6 +298,7 @@ export async function initTodo(container) {
 
           checkbox.onchange = async () => {
             task.done = checkbox.checked;
+            if (task.done) task.justChecked = true;
             if (task.hasQuantity) {
               if (task.done) task.completedQuantity = task.targetQuantity;
               else task.completedQuantity = 0;
@@ -351,5 +385,15 @@ export async function initTodo(container) {
   });
 
   renderTodos();
+    wrapper.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof addBtn !== 'undefined' && addBtn) {
+        addBtn.click();
+      }
+    }
+  });
   container.appendChild(wrapper);
 }
+

@@ -214,3 +214,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadStreak();
   switchTab('countdown');
 });
+
+async function updateGlobalUpcomingTest() {
+  const { getStorage } = await import('./modules/storage.js');
+  const { testSchedule: defaultSchedule } = await import('./modules/testData.js');
+  
+  const data = await getStorage(['testSchedule']);
+  let schedule = data.testSchedule ? data.testSchedule : defaultSchedule.map(t => ({
+    name: t.name,
+    date: t.date.toISOString(),
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 5)
+  }));
+  
+  const alertContainer = document.getElementById("global-test-alert");
+  if (!alertContainer) return;
+
+  const now = new Date();
+  const upcomingTests = schedule
+    .map(t => ({ ...t, dateObj: new Date(t.date) }))
+    .filter(t => t.dateObj.getTime() + 86400000 >= now.getTime())
+    .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+  
+  if (upcomingTests.length > 0) {
+    const nextTest = upcomingTests[0];
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const testDay = new Date(nextTest.dateObj.getFullYear(), nextTest.dateObj.getMonth(), nextTest.dateObj.getDate());
+    
+    const timeDiff = testDay.getTime() - today.getTime();
+    const daysLeft = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    
+    let daysText;
+    if (daysLeft <= 0) daysText = "Today!";
+    else if (daysLeft === 1) daysText = "Tomorrow";
+    else daysText = `In ${daysLeft} Days`;
+    
+    alertContainer.innerHTML = `
+      <div class="test-alert-icon warning-animated">
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      </div>
+      <div class="test-alert-content">
+        <div class="test-alert-title">${nextTest.name} &middot; <span class="accent-text">${daysText}</span></div>
+      </div>
+    `;
+    alertContainer.style.display = "flex";
+  } else {
+    alertContainer.style.display = "none";
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.testSchedule) {
+    updateGlobalUpcomingTest();
+  }
+});
+
+updateGlobalUpcomingTest();

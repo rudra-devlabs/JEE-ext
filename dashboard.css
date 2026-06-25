@@ -733,7 +733,7 @@ a { color: var(--text-primary); text-decoration: underline; }
 .progress-ring-container { display: flex; flex-direction: column; align-items: center; margin: 20px 0; }
 .ring-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 12px; text-transform: uppercase; letter-spacing: 1px; }
 
-.motivational-quote { font-size: 1rem; color: var(--text-secondary); font-style: italic; margin-top: 32px; text-align: center; max-width: 600px; opacity: 1; transition: opacity 0.3s; }
+.motivational-quote { font-size: 1.6rem; font-weight: 600; color: var(--text-primary); font-style: italic; margin-top: 32px; margin-bottom: 24px; text-align: center; max-width: 800px; opacity: 1; transition: opacity 0.4s ease; text-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.4; letter-spacing: 0.5px; }
 
 .upcoming-test-alert {
   margin-top: 24px;
@@ -1789,6 +1789,20 @@ a { color: var(--text-primary); text-decoration: underline; }
 
 .chat-bubble .katex-display {
   margin: 20px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.chat-bubble .katex-display::-webkit-scrollbar {
+  height: 6px;
+}
+.chat-bubble .katex-display::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-bubble .katex-display::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
 }
 
 .chat-msg-user .chat-bubble {
@@ -2041,10 +2055,10 @@ a { color: var(--text-primary); text-decoration: underline; }
 
 /* === Quiz Overlay === */
 .quiz-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 300;
-  background: rgba(0, 0, 0, 0.6); /* Dim background instead of solid to show it's an overlay */
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.85); /* Darken background significantly */
   padding: 32px;
   box-sizing: border-box;
   display: flex;
@@ -2115,6 +2129,8 @@ a { color: var(--text-primary); text-decoration: underline; }
   display: flex;
   gap: 4px;
   flex: 1;
+  flex-wrap: wrap;
+  max-width: 296px; /* Exactly 25 dots + gaps: (25 * 8) + (24 * 4) = 200 + 96 = 296 */
 }
 .quiz-card-progress-dot {
   width: 8px;
@@ -2122,6 +2138,7 @@ a { color: var(--text-primary); text-decoration: underline; }
   border-radius: 50%;
   background: var(--border-color);
   transition: background 0.2s;
+  cursor: pointer;
 }
 .quiz-card-progress-dot.answered {
   background: var(--text-primary);
@@ -2595,3 +2612,247 @@ a { color: var(--text-primary); text-decoration: underline; }
  * / 
  
  
+/* ========================================================= */
+/* PREMIUM ANIMATIONS & TRANSITIONS (ADDED GLOBALLY)         */
+/* ========================================================= */
+
+/* 1. Global Keyframes */
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* 2. Panels and Entrances */
+.tab-panel {
+  animation: slideUpFade 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+}
+
+.card, .chart-card, .note-card, .todo-item, .backlog-card, .message {
+  animation: slideUpFade 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Stagger animations for lists */
+.todo-list .todo-item:nth-child(1) { animation-delay: 0.05s; }
+.todo-list .todo-item:nth-child(2) { animation-delay: 0.1s; }
+.todo-list .todo-item:nth-child(3) { animation-delay: 0.15s; }
+.todo-list .todo-item:nth-child(4) { animation-delay: 0.2s; }
+.todo-list .todo-item:nth-child(5) { animation-delay: 0.25s; }
+.todo-list .todo-item:nth-child(6) { animation-delay: 0.3s; }
+
+.messages-container .message {
+  animation: slideUpFade 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* 3. Cards & Hover Lift */
+.card, .chart-card, .note-card {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.3s, box-shadow 0.3s !important;
+}
+
+.card:hover, .chart-card:hover, .note-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  border-color: var(--text-secondary);
+}
+
+body.light-theme .card:hover, 
+body.light-theme .chart-card:hover, 
+body.light-theme .note-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+}
+
+/* 4. Buttons */
+.btn, .icon-btn, .preset-btn, .tab-btn {
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+}
+
+.btn:active, .icon-btn:active, .preset-btn:active, .tab-btn:active {
+  transform: scale(0.96);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+}
+body.light-theme .btn-primary:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 5. Inputs & Textareas */
+input, textarea, .input-field {
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+}
+
+input:focus, textarea:focus, .input-field:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+body.light-theme input:focus, 
+body.light-theme textarea:focus, 
+body.light-theme .input-field:focus {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* 6. Checkboxes & Toggles */
+.custom-checkbox {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.custom-checkbox:active {
+  transform: scale(0.9);
+}
+
+.toggle-switch {
+  transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s !important;
+}
+.toggle-switch:active {
+  transform: scale(0.95);
+}
+
+.toggle-switch::after {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* 7. Dropdowns and Popovers */
+.dropdown-items:not(.dropdown-hide), .time-picker-popover.open {
+  animation: popIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: top center;
+}
+
+/* 8. Toasts */
+.toast {
+  animation: slideUpFade 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 9. Navigation Underline (Tabs) */
+.tab-btn {
+  position: relative;
+}
+.tab-btn.active {
+  border-bottom-color: transparent !important;
+}
+.tab-btn::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: var(--text-primary);
+  transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: translateX(-50%);
+}
+.tab-btn.active::after {
+  width: 100%;
+}
+
+/* 10. Progress Bars */
+.progress-fill {
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+}
+
+/* Strike-through for done items */
+.todo-item.done .todo-text, .backlog-label.done {
+  position: relative;
+  transition: color 0.3s;
+}
+.todo-item.done .todo-text::before, .backlog-label.done::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--text-secondary);
+}
+
+.todo-item.done.animate-strike .todo-text::before, .backlog-label.done.animate-strike::before {
+  animation: strike 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes strike {
+  0% { width: 0; }
+  100% { width: 100%; }
+}
+
+/* Fix for chat input focus box */
+.chat-input-full:focus, .chat-input:focus {
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Global Test Alert */
+.global-test-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 85, 85, 0.1);
+  border: 1px solid rgba(255, 85, 85, 0.3);
+  padding: 8px 16px;
+  border-radius: 20px;
+  margin: 0 16px;
+}
+
+.global-test-alert .test-alert-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.global-test-alert .test-alert-title {
+  font-weight: 700;
+  color: var(--error, #ff5555);
+  font-size: 0.95rem;
+}
+
+.global-test-alert .accent-text {
+  color: var(--text-primary);
+}
+
+@keyframes pulseRed {
+  0% { color: var(--error, #ff5555); transform: scale(1); filter: drop-shadow(0 0 2px rgba(255,85,85,0.5)); }
+  50% { color: #ff8888; transform: scale(1.1); filter: drop-shadow(0 0 8px rgba(255,85,85,0.8)); }
+  100% { color: var(--error, #ff5555); transform: scale(1); filter: drop-shadow(0 0 2px rgba(255,85,85,0.5)); }
+}
+
+.warning-animated {
+  animation: pulseRed 2s infinite ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Drag and Drop Overlay */
+.dnd-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(20, 20, 20, 0.85);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  z-index: 1000;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  pointer-events: none; /* so dragleave triggers correctly */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  backdrop-filter: blur(4px);
+}
+.drag-over .dnd-overlay {
+  opacity: 1;
+  visibility: visible;
+}
+.drag-over {
+  position: relative; /* ensure overlay maps correctly */
+}
+

@@ -69,19 +69,24 @@ Four canvas-based charts:
 - Theme-aware colors (reads computed CSS variables)
 
 ### 🤖 AI Chat
-Chat with 52 AI models across 6 providers for JEE assistance:
+Chat with 106 AI models across 6 providers for JEE assistance:
 
 | Provider | Models |
 |----------|--------|
 | **Mistral** | mistral-large, mistral-small, pixtral, ministral, codestral, open-mistral-nemo, open-codestral-mamba |
-| **Alibaba (DashScope)** | qwen-max, qwen-plus, qwen-turbo, qwen2.5-vl, qwen2.5-7b/14b/32b/72b, qwen2.5-coder-7b/32b, qwq-32b |
+| **Alibaba (DashScope)** | Massive roster of 60+ models including Qwen Max/Plus/Turbo versions, DeepSeek V3.2, QwQ, QvQ, Qwen3.7/3.6, and advanced vision models |
 | **Groq** | llama-4-scout, llama-4-maverick, llama-3.3-70b-versatile, llama-3.1-8b, deepseek-r1-distill-llama-70b, mixtral-8x7b, qwen-2.5-32b, gemma2-9b |
 | **OpenRouter** | deepseek-r1, deepseek-v3-0324, meta-llama-4-scout, meta-llama-4-maverick, qwen-qwq-32b, qwen-2.5-vl-72b, qwen-2.5-32b-instruct, anthropic-claude-sonnet-3.7, x-ai-grok-2, google-gemini-2.0-flash, openai-gpt-4o, mistralai-mistral-small |
 | **Google AI Studio** | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash |
 | **Cerebras** | llama-3.3-70b, llama-3.1-8b |
 
 Features:
-- **Streaming responses** with real-time markdown + math rendering
+- **Streaming responses**
+- **Client-Side Image Optimization** — Intercepts images and dynamically shrinks them (capping at 650px or 499px based on dimensions) to save drastically on token limits while preserving vision accuracy.
+- **Advanced Context Management** — A strict 5000-token dynamic hard limit algorithm that prunes older text but perfectly exempts and preserves any images you've sent.
+- **Native Drag-and-Drop Vision** — Beautiful blurred overlays when dragging images into Chat, Questions, or Mistakes logs.
+- **API Key Enhancements** — Single-click Copy/Unlink buttons for API keys with refined padding and visual cues.
+ with real-time markdown + math rendering
 - **Markdown formatting** — headings, lists, code blocks, blockquotes, bold/italic, tables (via KaTeX renderer)
 - **LaTeX math rendering** — `$...$` (inline), `$$...$$` (display), `\(...\)`, `\[...\]`, `\begin{env}` environments
 - **Session management** — sidebar with rename, delete, and auto-generated titles
@@ -128,7 +133,7 @@ Dual dark/light theme with CSS custom properties:
 ### Developer Mode
 1. Clone or download this repository:
    ```
-   git clone https://github.com/yourusername/jee-ext.git
+   git clone https://github.com/rudra-devlabs/JEE-ext
    ```
 2. Open Chrome and navigate to `chrome://extensions`
 3. Enable **Developer mode** (toggle in top-right)
